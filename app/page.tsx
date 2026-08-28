@@ -42,6 +42,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [analysisText, setAnalysisText] = useState('');
   const inFlight = useRef(false);
   const reviews = useMemo(() => splitReviews(text), [text]);
   const rated = reviews.filter((review) => review.rating).length;
@@ -57,11 +58,14 @@ export default function Home() {
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload), signal: controller.signal,
+        body: JSON.stringify({ reviews: text }), signal: controller.signal,
       });
       const data = await response.json().catch(() => { throw new Error('サーバーから正しい応答を受け取れませんでした。再試行してください。'); });
       if (!response.ok) throw new Error(data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : '分析に失敗しました。');
-      setResult(data as AnalysisResult);
+      if (!data || typeof data !== 'object' || !('text' in data) || typeof data.text !== 'string' || !data.text.trim())
+        throw new Error('分析結果が空でした。再試行してください。');
+      setResult(null);
+      setAnalysisText(data.text);
       setView('result');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
@@ -95,6 +99,6 @@ export default function Home() {
         {error && <p role="alert" className="error-message">{error}</p>}
         {!validInput && <p className="error-message">レビューは1〜50件、各2,000文字、合計50,000文字まで入力できます。</p>}
       </section><p className="privacy-note">分析時にレビューをGoogle Geminiへ送信します。本アプリでは保存しません。個人情報・機密情報は入力しないでください。</p>
-    </div> : result && <Results result={result} appName={appName} onReset={() => setView('input')} />}
+    </div> : analysisText ? <div className="page-shell results-shell"><section className="panel compact-card"><div className="section-heading"><h2>レビュー分析（自由文）</h2><button className="secondary" onClick={() => setView('input')}>入力へ戻る</button></div><p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9, marginTop: 24 }}>{analysisText}</p></section></div> : result && <Results result={result} appName={appName} onReset={() => setView('input')} />}
   </main>;
 }
