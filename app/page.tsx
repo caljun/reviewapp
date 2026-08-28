@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { inputSchema, type AnalysisResult } from '@/lib/analysis';
+import { inputSchema } from '@/lib/analysis';
+import { type SimpleAnalysis } from '@/lib/simple-analysis';
 import Results from './results';
 
 const sample = `★1
@@ -41,7 +42,7 @@ export default function Home() {
   const [view, setView] = useState<'input' | 'preview' | 'result'>('input');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [result, setResult] = useState<SimpleAnalysis | null>(null);
   const [analysisText, setAnalysisText] = useState('');
   const inFlight = useRef(false);
   const reviews = useMemo(() => splitReviews(text), [text]);
@@ -62,10 +63,13 @@ export default function Home() {
       });
       const data = await response.json().catch(() => { throw new Error('サーバーから正しい応答を受け取れませんでした。再試行してください。'); });
       if (!response.ok) throw new Error(data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : '分析に失敗しました。');
-      if (!data || typeof data !== 'object' || !('text' in data) || typeof data.text !== 'string' || !data.text.trim())
-        throw new Error('分析結果が空でした。再試行してください。');
-      setResult(null);
-      setAnalysisText(data.text);
+      if (data && typeof data === 'object' && 'summary' in data) {
+        setResult(data as SimpleAnalysis);
+        setAnalysisText('');
+      } else if (data && typeof data === 'object' && 'text' in data && typeof data.text === 'string' && data.text.trim()) {
+        setResult(null);
+        setAnalysisText(data.text);
+      } else throw new Error('分析結果が空でした。再試行してください。');
       setView('result');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
