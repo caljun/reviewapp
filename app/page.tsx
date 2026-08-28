@@ -4,6 +4,8 @@ import { useMemo, useRef, useState } from 'react';
 import { inputSchema } from '@/lib/analysis';
 import { type SimpleAnalysis } from '@/lib/simple-analysis';
 import Results from './results';
+import CsvInput, { type CsvInputState } from './csv-input';
+import { reviewsToText } from '@/lib/review-csv';
 
 const sample = `★1
 アップデート後にアプリが起動しなくなりました。早く直してほしいです。
@@ -37,6 +39,8 @@ const splitReviews = (value: string): Review[] => value.replace(/\r/g, '').trim(
 
 export default function Home() {
   const [text, setText] = useState(sample);
+  const [inputMode, setInputMode] = useState<'text' | 'csv'>('text');
+  const [csv, setCsv] = useState<CsvInputState>({ reviews: [], error: '', busy: false });
   const [appName, setAppName] = useState('Habit Note');
   const [focus, setFocus] = useState('次のアップデートで直すべき機能を知りたい');
   const [view, setView] = useState<'input' | 'preview' | 'result'>('input');
@@ -45,10 +49,12 @@ export default function Home() {
   const [result, setResult] = useState<SimpleAnalysis | null>(null);
   const [analysisText, setAnalysisText] = useState('');
   const inFlight = useRef(false);
-  const reviews = useMemo(() => splitReviews(text), [text]);
+  const textReviews = useMemo(() => splitReviews(text), [text]);
+  const reviews = inputMode === 'csv' ? csv.reviews : textReviews;
+  const analysisInput = inputMode === 'csv' ? reviewsToText(reviews) : text;
   const rated = reviews.filter((review) => review.rating).length;
   const payload = { appName, focus, reviews: reviews.map((r, id) => ({ ...r, id })) };
-  const validInput = inputSchema.safeParse(payload).success;
+  const validInput = inputSchema.safeParse(payload).success && analysisInput.length <= 50000 && (inputMode !== 'csv' || (!csv.busy && !csv.error));
   const analyze = async () => {
     if (inFlight.current || !validInput) return;
     inFlight.current = true;
@@ -59,7 +65,7 @@ export default function Home() {
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reviews: text }), signal: controller.signal,
+        body: JSON.stringify({ reviews: analysisInput }), signal: controller.signal,
       });
       const data = await response.json().catch(() => { throw new Error('サーバーから正しい応答を受け取れませんでした。再試行してください。'); });
       if (!response.ok) throw new Error(data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : '分析に失敗しました。');
@@ -88,17 +94,20 @@ export default function Home() {
       <section className="hero"><span className="eyebrow">AI REVIEW ANALYSIS</span><h1>大量のレビューから、<br /><em>次に直すべきこと</em>を見つける。</h1><p>レビューをまとめて貼り付けるだけ。よくある不満を分類・集計し、改善の優先順位を整理します。</p></section>
       <section className="panel input-panel">
         <div className="steps" aria-label="進捗"><span className="active"><b>1</b>レビュー入力</span><i /><span className={view === 'preview' ? 'active' : ''}><b>2</b>内容を確認</span><i /><span><b>3</b>分析結果</span></div>
-        {view === 'input' ? <>
+        <div hidden={view !== 'input'}>
           <div className="field-row"><label className="field"><span>アプリ名 <small>任意</small></span><input maxLength={200} value={appName} onChange={(e) => setAppName(e.target.value)} placeholder="例：Habit Note" /></label><label className="field"><span>特に知りたいこと <small>任意</small></span><input maxLength={1000} value={focus} onChange={(e) => setFocus(e.target.value)} /></label></div>
-          <div className="tabs"><button className="selected">テキスト貼り付け</button><button disabled>CSVアップロード <small>近日対応</small></button></div>
+          <div className="tabs" aria-label="入力方法"><button type="button" aria-pressed={inputMode === 'text'} className={inputMode === 'text' ? 'selected' : ''} onClick={() => setInputMode('text')}>テキスト貼り付け</button><button type="button" aria-pressed={inputMode === 'csv'} className={inputMode === 'csv' ? 'selected' : ''} onClick={() => setInputMode('csv')}>CSVアップロード</button></div>
+          <div hidden={inputMode !== 'text'}>
           <label className="field textarea-field"><span>レビューを貼り付け</span><textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="レビューを空行で区切って貼り付けてください" /><span className="counter">{text.length.toLocaleString()} 文字</span></label>
-          <div className="detected"><div><span className="pulse" /><strong>{reviews.length}件</strong>のレビューを認識しました</div><span>星評価を認識：{rated}/{reviews.length}件</span></div>
+          </div>
+          <div hidden={inputMode !== 'csv'}><CsvInput onChange={setCsv} /></div>
+          <div className="detected" role="status"><div><span className="pulse" /><strong>{reviews.length}件</strong>のレビューを認識しました</div><span>星評価を認識：{rated}/{reviews.length}件</span></div>
           <div className="panel-footer"><p>入力データは保存されません</p><button className="primary" disabled={!validInput} onClick={() => setView('preview')}>入力内容を確認 <span>→</span></button></div>
-        </> : <>
+        </div><div hidden={view !== 'preview'}>
           <div className="preview-heading"><div><span className="eyebrow">PREVIEW</span><h2>{reviews.length}件のレビューを確認</h2></div><button className="link-button" disabled={loading} onClick={() => setView('input')}>← 入力を編集</button></div>
           <div className="review-list">{reviews.map((review, index) => <article className="review-item" key={`${review.text}-${index}`}><span className="number">{String(index + 1).padStart(2, '0')}</span><div><span className="stars">{review.rating ? '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating) : '評価なし'}</span><p>{review.text}</p></div></article>)}</div>
           <div className="panel-footer sticky"><p>{appName || 'アプリ名未設定'} ・ {reviews.length}件を分析</p><button className="primary" onClick={analyze} disabled={loading || !validInput}>{loading ? '分析しています…' : error ? '再試行する' : 'AIで分析する'} <span>{loading ? '◌' : '✦'}</span></button></div>
-        </>}
+        </div>
         {loading && <p role="status" className="privacy-note">レビューを分析しています。このままお待ちください。</p>}
         {error && <p role="alert" className="error-message">{error}</p>}
         {!validInput && <p className="error-message">レビューは1〜50件、各2,000文字、合計50,000文字まで入力できます。</p>}
