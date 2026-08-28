@@ -1,0 +1,9 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // CSV files are processed locally and must not be uploaded to Storage.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

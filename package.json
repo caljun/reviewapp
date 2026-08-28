@@ -6,7 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "test": "tsx --test tests/analysis.test.ts",
+    "test": "tsx --test tests/analysis.test.ts tests/simple-analysis.test.ts tests/csv-export.test.ts tests/protected-analysis.test.ts",
     "test:live": "node --env-file=.env.local --import tsx --test tests/live.test.ts",
     "dev": "next dev",
     "build": "next build",
@@ -16,10 +16,12 @@
   "dependencies": {
     "@google/genai": "^2.19.0",
     "firebase": "^12.18.0",
+    "firebase-admin": "^14.3.0",
     "next": "16.2.6",
     "papaparse": "^5.7.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "server-only": "^0.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

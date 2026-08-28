@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Only the server Admin SDK accesses usage metadata. All clients are denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

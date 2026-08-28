@@ -1,12 +1,25 @@
 # ReviewScope
 
-Next.js App Router + Geminiによるアプリレビュー分析。Firebase・認証・Stripe・CSVは未実装。
+Next.js 16 / React 19 / Firebase匿名認証・Firestore利用枠管理 / Geminiレビュー分析。
+CSV入力、Markdownコピー、ランキングCSVダウンロードに対応。
+Stripe、決済、Google・メールログイン、分析履歴、レビュー保存、Storageは未実装。
 
-## ローカル設定
+## 設定
 
-`.env.local` に `GEMINI_API_KEY` を設定する（チャット・GitHubには貼らない）。
-任意の `GEMINI_MODEL` でモデル変更可能。既定値は `gemini-2.5-flash`。
-変数に `NEXT_PUBLIC_` を付けない。`.env.example` はキーを含まないテンプレート。
+既存の `.env.local` とVercelのEnvironment Variablesに設定します。新しいenvファイルは不要です。
+
+- `GEMINI_API_KEY`（既存）
+- `GEMINI_MODEL`（任意、既定は `gemini-2.5-flash`）
+- 既存の `NEXT_PUBLIC_FIREBASE_*` Webアプリ設定（維持）
+- 追加：`FIREBASE_ADMIN_PROJECT_ID`
+- 追加：`FIREBASE_ADMIN_CLIENT_EMAIL`
+- 追加：`FIREBASE_ADMIN_PRIVATE_KEY`
+
+Adminの3値はFirebaseプロジェクト設定 → サービスアカウントの管理者用認証情報から設定します。
+Web SDK設定とは別物です。Web側と同一プロジェクトを指定し、Firestoreへのアクセス権限を持つサービスアカウントを使用してください。
+秘密鍵はPEM全文（BEGIN/END行を含む）。文字としての `\n` はサーバーで改行に復元します。
+Admin変数・Geminiキーに `NEXT_PUBLIC_` を付けず、Gitやチャットにも貼らないでください。
+JSON鍵ファイル自体はリポジトリへ置かないでください。
 
 ```sh
 npm install
@@ -16,45 +29,88 @@ npm run lint
 npm run build
 ```
 
-## 処理
+## 認証・分析フロー
 
-ブラウザ → `POST /api/analyze` → 入力検証 → Gemini構造化JSON → zodとID整合性検証 → サーバー集計 → 結果表示。
-ブラウザはGeminiを直接呼ばない。キー・モデル名・生レスポンスはAPIから返さない。
-合計文字数はレビュー本文の合計（JavaScriptの文字列長）を使用する。
+1. Firebase Authのローカル永続化と `onAuthStateChanged` による既存ユーザー復元を待つ。
+2. ユーザーがない場合だけ `signInAnonymously`。同時初期化は同じPromiseを共有。
+3. `GET /api/usage` にIDトークンを送信。Admin SDKで検証し、未登録なら `users/{uid}` を作成。既存値は変更しない。
+4. ブラウザでUUIDのrequestIdを生成。`POST /api/analyze` にIDトークンと入力配列を送る。
+5. トークン検証 → 入力検証 → 利用枠トランザクション予約 → Gemini → 完了記録 → 結果表示。
+6. 401の場合のみ、`getIdToken(true)` で更新して同じリクエストを1回再送する。
 
-- レビュー1〜50件、1件2,000文字、合計50,000文字
-- appName最大200文字、focus最大1,000文字
-- idは一意の非負整数、ratingは任意の整数1〜5
-- リクエスト本文は400,000バイトまで
-- 不正JSON、必須項目欠落、空の優先項目、不正ID、感情IDの重複・欠落は修正指示付きで1回だけ再生成
-- グループ内の重複IDは除去。集計関数も未知IDを除外するが、APIでは未知IDを含む回答を成功として返さない
-- 感情・問題の件数と割合、高評価ポイントの件数はコードで計算。割合は小数第1位に丸めるため合計が100%とわずかに異なる場合がある
-- 1回の外部呼び出しは25秒、修正を含め最大2回。ブラウザは65秒で中断
-- 入力不正400、キー未設定500、出力不正・外部接続失敗502。詳細エラーを公開しない
-- レビュー、キー、生レスポンスをアプリで保存・ログ出力しない。Google側のデータ取扱いは契約・API利用条件に依存する
+Adminはserver-onlyモジュール内で遅延初期化し、名前付きアプリを再利用します。
+API入力は `{requestId, appName?, focus?, reviews:[{id?,text,rating?}]}`。
+requestIdはUUID。レビュー1〜50件、本文1〜2,000文字（空白のみ不可）、本文合計50,000文字、アプリ名100文字、観点500文字。
+ratingは指定時に整数1〜5。idは指定時に非負整数。文字数はJavaScriptの文字列長。
+本文のバイト上限も700,000バイトで制限します（JSONエスケープ分を考慮）。
 
-## テスト
+Geminiの簡易JSON方式は維持しています。appName・focus・reviewsをデータとして区切って送信し、focusを重点観点にします。
+出力のJSON Schema・構造化出力・Zod出力検証・修正再生成は使用しません。
+既存のコードブロック除去・JSON.parse・最小限の形確認に失敗した場合、自由文を返します。
+空の応答は失敗として返金します。Geminiへの通信タイムアウトは40秒、自動再試行なしです。
+入力検証にのみZodを使用。ランキング件数は従来どおりAIの出力であり、正確性を保証しません。
 
-`npm test` はプロバイダーをモックした入力検証、集計、不正ID、修正再試行、エラー安全性のテスト。
-実モデルの意味理解はモックでは確認できないため、別途以下を実行する。
+## 利用枠と保存データ
 
-```sh
-RUN_LIVE_GEMINI=1 npm run test:live
-```
+`users/{uid}`：`freeAnalysisUsed`, `remainingCredits`, `createdAt`, `updatedAt`。
+初期値は無料未使用・0クレジットです。
 
-`.env.local` をロードし、架空レビュー2セットで起動不良の統合、広告・通知・機能要望の分離、高評価抽出、星より本文優先、入力変更で結果変更を確認する。
-最大4回のAPI呼び出し（修正含む）になり、料金が発生する場合がある。キー未設定なら失敗する。
+`analysisRequests/{requestId}`：`uid`, `reviewCount`, `source`（free/credit）, `status`（reserved/completed/refunded）, `createdAt`, `updatedAt`。
+タイムスタンプにはFirestoreのサーバー時刻を使用します。
+レビュー本文、分析結果、アプリ名、focus、CSV、IDトークンはFirestoreへ保存しません。
 
-## Vercel再デプロイ
+- 未使用の無料枠があり10件以内なら無料枠を予約。
+- それ以外は1クレジットで最大50件。残高がなければ403。
+- 予約時に無料使用済み／クレジット減算とrequest作成を同一トランザクションで実施。
+- 成功時はcompleted。Gemini失敗時はreservedからrefundedへ遷移し、同じトランザクションで返金。
+- refunded/completedは再返金しない。同一requestIdは409で拒否し、再分析・再消費しない。
+- 通信不明時の画面内再試行は同じrequestIdを保持。明示的な失敗・返金確認後は新しいIDを使用。
+- クライアントから残高を編集する機能はありません。Firestore Rulesは匿名認証済みも含め全拒否。Admin SDKのみ操作します。
+- `firebase.json` はFirestoreのみ対象。既存の `storage.rules` は今回の対象外で、デプロイしません。
 
-1. 変更をコミットして接続先GitHubブランチへpush。
-2. Vercelの対象環境に `GEMINI_API_KEY` を設定。必要なら `GEMINI_MODEL` も設定。
-3. 自動デプロイ、または環境変数更新後にRedeployを実行。Build Commandは `npm run build`。
-4. 公開URLでサンプル分析と、異なる入力で結果が変わることを確認。
+## APIエラー
 
-## 現時点の制約
+| HTTP | code | 意味 |
+| --- | --- | --- |
+| 400 | INVALID_INPUT | 型・件数・文字数・UUID・JSON不正 |
+| 401 | UNAUTHORIZED | トークンなし／形式不正／無効／期限切れ |
+| 403 | PAID_PLAN_REQUIRED | 無料で11件以上、クレジットなし |
+| 403 | FREE_LIMIT_REACHED | 無料使用済み、クレジットなし |
+| 409 | REQUEST_RESERVED / REQUEST_COMPLETED / REQUEST_REFUNDED | 同じIDは受付済み |
+| 409 | REQUEST_CONFLICT | 別ユーザーが所有するID |
+| 500 | SERVER_CONFIGURATION_ERROR | AdminまたはGeminiの設定不足・初期化失敗 |
+| 500 | USAGE_DATA_ERROR / SERVER_ERROR | 利用枠の不整合・その他サーバー障害 |
+| 502 | ANALYSIS_FAILED | Gemini失敗、返金完了 |
+| 503 | REFUND_PENDING / COMPLETION_PENDING | 利用枠の更新失敗、管理者確認が必要 |
 
-認証・回数制限・永続レート制限は未実装。公開APIの連続呼び出しによる費用増加にはGoogle側のクォータやVercel側の保護が必要。
-プロンプトでは入力をデータとして隔離するが、モデルの誤分類やプロンプトインジェクション耐性を完全には保証しない。
-根拠IDの存在と構造はコードで検証し、自然言語の根拠妥当性は実レビューで確認する。
-Vercel向けのNext.jsビルドを使用し、Sitesのデプロイは行わない。
+秘密値・生のSDKエラー・スタックトレースは返しません。APIレスポンスはno-storeです。
+
+## テストと本番確認
+
+`npm test` は現行のAPI・利用枠ロジック、同時実行、返金、401再送、CSV、書き出し、簡易JSONの自動テストです。
+Firestoreのテストは原子的なインメモリアダプター、認証とGeminiはモックです。実Firebaseの統合テストではありません。
+旧 `tests/analysis.test.ts` も回帰テストとして残していますが、旧構造化出力の処理は現行Routeでは使用していません。
+`test:live` は旧実装用なので今回の本番検証には使わないでください。
+
+本番反映手順：
+
+1. VercelにAdminの3変数を追加（Production、必要ならPreviewも）。既存Firebase/Gemini変数は維持。
+2. 変更をコミット・GitHubへpushし、Vercelで再デプロイ。Build Commandは `npm run build`。
+3. ルールを反映する場合は `firebase deploy --only firestore:rules --project reviewapp-979b5`。全拒否の方針は変わりません。
+4. 通常ブラウザで開き、Firebase Authenticationコンソールに匿名ユーザーが作られること、リロード後に同じUIDで新規作成が増えないことを確認。
+5. 無料状態で11件入力時はボタン無効。開発者ツールから有効トークン付きで11件を直接POSTして403を確認。
+6. 10件以内で1回分析して成功、Firestoreのuser無料使用済み・request completedを確認。2回目の直接POSTが403であることを確認。
+7. 同じrequestIdのPOSTが409、リクエストドキュメントと利用枠が増減しないことを確認。
+8. Authorizationなし・無効トークンが401、正常認証付きの不正入力が400であることを確認。
+9. CSVの列選択・プレビュー、ランキング、Markdownコピー、CSV保存を確認。
+10. 失敗返金は本番キーを壊さず、別のPreview環境で無効な `GEMINI_MODEL` を使って502・refunded・無料枠復帰を確認し、設定を戻す。
+11. Firestoreの保存フィールドを確認し、本文や分析結果が含まれないことを確認。
+
+## 既知の制限・運用注意
+
+- 「無料1回」はUID単位です。ブラウザデータ削除・別ブラウザ等で新しい匿名UIDを作れるため、1人1回の厳密な保証やボット対策ではありません。App Check・レート制限・予算上限等は別途必要です。
+- プロセス強制終了やFirestore障害ではreservedが残る可能性があります。自動回収ジョブは今回未実装。503時や予約滞留時は、実行が停止済みか管理者が確認してからトランザクションで返金してください。
+- completedの結果は保存しないため、レスポンス受信前の切断やリロードで結果を失うと再取得できません。同じIDでの再分析はしません。
+- 残高表示は他タブの操作と一時的にずれる場合がありますが、サーバーのトランザクションで制限を強制します。
+- ブラウザの匿名認証永続化、実Admin権限、実Firestoreトランザクション、本番Geminiの通し確認は上記手順で実施してください。
+- 本アプリはレビュー本文を保存しませんが、Google側の取扱いは各APIの契約・利用条件に依存します。

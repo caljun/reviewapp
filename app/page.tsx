@@ -1,11 +1,14 @@
 'use client';
 
+import './quota.css';
+
 import { useMemo, useRef, useState } from 'react';
-import { inputSchema } from '@/lib/analysis';
+import { reviewInputSchema } from '@/lib/analyze-input';
 import { type SimpleAnalysis } from '@/lib/simple-analysis';
 import Results from './results';
 import CsvInput, { type CsvInputState } from './csv-input';
-import { reviewsToText } from '@/lib/review-csv';
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
+import { useAnalysisSession } from './use-analysis-session';
 
 const sample = `★1
 アップデート後にアプリが起動しなくなりました。早く直してほしいです。
@@ -38,6 +41,7 @@ const splitReviews = (value: string): Review[] => value.replace(/\r/g, '').trim(
 }).filter((review) => review.text.length > 0);
 
 export default function Home() {
+  const session = useAnalysisSession();
   const [text, setText] = useState(sample);
   const [inputMode, setInputMode] = useState<'text' | 'csv'>('text');
   const [csv, setCsv] = useState<CsvInputState>({ reviews: [], error: '', busy: false });
@@ -49,25 +53,32 @@ export default function Home() {
   const [result, setResult] = useState<SimpleAnalysis | null>(null);
   const [analysisText, setAnalysisText] = useState('');
   const inFlight = useRef(false);
+  const attempt = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const textReviews = useMemo(() => splitReviews(text), [text]);
   const reviews = inputMode === 'csv' ? csv.reviews : textReviews;
-  const analysisInput = inputMode === 'csv' ? reviewsToText(reviews) : text;
   const rated = reviews.filter((review) => review.rating).length;
   const payload = { appName, focus, reviews: reviews.map((r, id) => ({ ...r, id })) };
-  const validInput = inputSchema.safeParse(payload).success && analysisInput.length <= 50000 && (inputMode !== 'csv' || (!csv.busy && !csv.error));
+  const validInput = reviewInputSchema.safeParse(payload).success && (inputMode !== 'csv' || (!csv.busy && !csv.error));
+  const canAnalyze = validInput && !session.busy && !!session.user && !!session.usage
+    && (session.usage.remainingCredits > 0 || (!session.usage.freeAnalysisUsed && reviews.length <= 10));
   const analyze = async () => {
-    if (inFlight.current || !validInput) return;
+    if (inFlight.current || !canAnalyze || !session.user) return;
     inFlight.current = true;
     setLoading(true);
     setError('');
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 65000);
     try {
-      const response = await fetch('/api/analyze', {
+      const fingerprint = JSON.stringify(payload);
+      if (!attempt.current || attempt.current.fingerprint !== fingerprint) attempt.current = { fingerprint, requestId: crypto.randomUUID() };
+      const response = await authenticatedFetch(session.user, '/api/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reviews: analysisInput }), signal: controller.signal,
+        body: JSON.stringify({ ...payload, requestId: attempt.current.requestId }), signal: controller.signal,
       });
       const data = await response.json().catch(() => { throw new Error('サーバーから正しい応答を受け取れませんでした。再試行してください。'); });
+      // Only start a new ID when the server explicitly confirms failure/refund.
+      if (!response.ok && data && typeof data === 'object' && 'code' in data
+        && ['ANALYSIS_FAILED', 'SERVER_CONFIGURATION_ERROR', 'INVALID_INPUT', 'PAID_PLAN_REQUIRED', 'FREE_LIMIT_REACHED', 'REQUEST_REFUNDED'].includes(String(data.code))) attempt.current = null;
       if (!response.ok) throw new Error(data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : '分析に失敗しました。');
       if (data && typeof data === 'object' && 'summary' in data) {
         setResult(data as SimpleAnalysis);
@@ -76,6 +87,7 @@ export default function Home() {
         setResult(null);
         setAnalysisText(data.text);
       } else throw new Error('分析結果が空でした。再試行してください。');
+      attempt.current = null;
       setView('result');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
@@ -85,6 +97,7 @@ export default function Home() {
       window.clearTimeout(timeout);
       inFlight.current = false;
       setLoading(false);
+      await session.refresh();
     }
   };
 
@@ -93,9 +106,15 @@ export default function Home() {
     {view !== 'result' ? <div className="page-shell input-shell">
       <section className="hero"><span className="eyebrow">AI REVIEW ANALYSIS</span><h1>大量のレビューから、<br /><em>次に直すべきこと</em>を見つける。</h1><p>レビューをまとめて貼り付けるだけ。よくある不満を分類・集計し、改善の優先順位を整理します。</p></section>
       <section className="panel input-panel">
+        <div className="quota-notice" aria-live="polite">
+          {session.busy ? <p>認証を準備しています</p> : session.error ? <><p role="alert">{session.error}</p><button className="secondary" onClick={() => void session.refresh()}>認証・利用枠を再確認</button></> : session.usage && <>
+            <p>{session.usage.freeAnalysisUsed ? '無料枠を利用済みです' : '無料分析を1回利用できます（最大10レビュー）'}{session.usage.remainingCredits > 0 && ` ・ 残り${session.usage.remainingCredits}クレジット`}</p>
+            {session.usage.remainingCredits === 0 && (session.usage.freeAnalysisUsed || reviews.length > 10) && <p>有料プランの準備中です。{!session.usage.freeAnalysisUsed && '無料分析は10件以内にしてください。'}</p>}
+          </>}
+        </div>
         <div className="steps" aria-label="進捗"><span className="active"><b>1</b>レビュー入力</span><i /><span className={view === 'preview' ? 'active' : ''}><b>2</b>内容を確認</span><i /><span><b>3</b>分析結果</span></div>
         <div hidden={view !== 'input'}>
-          <div className="field-row"><label className="field"><span>アプリ名 <small>任意</small></span><input maxLength={200} value={appName} onChange={(e) => setAppName(e.target.value)} placeholder="例：Habit Note" /></label><label className="field"><span>特に知りたいこと <small>任意</small></span><input maxLength={1000} value={focus} onChange={(e) => setFocus(e.target.value)} /></label></div>
+          <div className="field-row"><label className="field"><span>アプリ名 <small>任意</small></span><input maxLength={100} value={appName} onChange={(e) => setAppName(e.target.value)} placeholder="例：Habit Note" /></label><label className="field"><span>特に知りたいこと <small>任意</small></span><input maxLength={500} value={focus} onChange={(e) => setFocus(e.target.value)} /></label></div>
           <div className="tabs" aria-label="入力方法"><button type="button" aria-pressed={inputMode === 'text'} className={inputMode === 'text' ? 'selected' : ''} onClick={() => setInputMode('text')}>テキスト貼り付け</button><button type="button" aria-pressed={inputMode === 'csv'} className={inputMode === 'csv' ? 'selected' : ''} onClick={() => setInputMode('csv')}>CSVアップロード</button></div>
           <div hidden={inputMode !== 'text'}>
           <label className="field textarea-field"><span>レビューを貼り付け</span><textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="レビューを空行で区切って貼り付けてください" /><span className="counter">{text.length.toLocaleString()} 文字</span></label>
@@ -106,7 +125,7 @@ export default function Home() {
         </div><div hidden={view !== 'preview'}>
           <div className="preview-heading"><div><span className="eyebrow">PREVIEW</span><h2>{reviews.length}件のレビューを確認</h2></div><button className="link-button" disabled={loading} onClick={() => setView('input')}>← 入力を編集</button></div>
           <div className="review-list">{reviews.map((review, index) => <article className="review-item" key={`${review.text}-${index}`}><span className="number">{String(index + 1).padStart(2, '0')}</span><div><span className="stars">{review.rating ? '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating) : '評価なし'}</span><p>{review.text}</p></div></article>)}</div>
-          <div className="panel-footer sticky"><p>{appName || 'アプリ名未設定'} ・ {reviews.length}件を分析</p><button className="primary" onClick={analyze} disabled={loading || !validInput}>{loading ? '分析しています…' : error ? '再試行する' : 'AIで分析する'} <span>{loading ? '◌' : '✦'}</span></button></div>
+          <div className="panel-footer sticky"><p>{appName || 'アプリ名未設定'} ・ {reviews.length}件を分析</p><button className="primary" onClick={analyze} disabled={loading || !canAnalyze}>{loading ? '分析しています…' : error ? '再試行する' : 'AIで分析する'} <span>{loading ? '◌' : '✦'}</span></button></div>
         </div>
         {loading && <p role="status" className="privacy-note">レビューを分析しています。このままお待ちください。</p>}
         {error && <p role="alert" className="error-message">{error}</p>}
