@@ -172,3 +172,15 @@ test('token refresh only on 401, only once, same request body / ID', async () =>
   await authenticatedFetch(user, '/', {}, async () => { attempts++; return new Response(null, { status: 502 }); });
   assert.equal(attempts, 1);
 });
+
+test('specific safe authentication errors are preserved', async () => {
+  const { quota } = setup();
+  const handler = createProtectedAnalysis({
+    quota,
+    verify: async () => { throw new ApiError(401, 'TOKEN_PROJECT_MISMATCH', 'プロジェクトが一致しません。'); },
+    generate: async () => ({ text: 'never' }),
+  });
+  const response = await handler(request(input()));
+  assert.equal(response.status, 401);
+  assert.equal(await code(response), 'TOKEN_PROJECT_MISMATCH');
+});

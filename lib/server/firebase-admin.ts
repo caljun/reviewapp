@@ -17,5 +17,31 @@ function adminApp() {
   catch { throw new ApiError(500, 'SERVER_CONFIGURATION_ERROR', 'サーバーの認証設定を確認してください。'); }
 }
 
-export const verifyToken = (token: string) => getAuth(adminApp()).verifyIdToken(token);
+type TokenEnvelope = { aud?: unknown; iss?: unknown };
+
+function tokenEnvelope(token: string): TokenEnvelope {
+  try {
+    const part = token.split('.')[1];
+    return JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) as TokenEnvelope;
+  } catch {
+    throw new ApiError(401, 'INVALID_ID_TOKEN', '認証情報の形式が不正です。再試行してください。');
+  }
+}
+
+export async function verifyToken(token: string) {
+  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID?.trim();
+  if (!projectId) adminApp(); // Produce the existing safe configuration error.
+  const envelope = tokenEnvelope(token);
+  if (envelope.aud !== projectId || envelope.iss !== `https://securetoken.google.com/${projectId}`) {
+    throw new ApiError(401, 'TOKEN_PROJECT_MISMATCH', 'FirebaseのWeb設定とAdmin設定のプロジェクトが一致していません。');
+  }
+  try {
+    return await getAuth(adminApp()).verifyIdToken(token);
+  } catch (error) {
+    const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
+    if (code === 'auth/id-token-expired') throw new ApiError(401, 'ID_TOKEN_EXPIRED', '認証の有効期限が切れました。再試行してください。');
+    if (code === 'auth/id-token-revoked' || code === 'auth/user-disabled') throw new ApiError(401, 'ID_TOKEN_REJECTED', 'この認証情報は利用できません。');
+    throw new ApiError(401, 'ID_TOKEN_VERIFICATION_FAILED', 'Firebase IDトークンを検証できませんでした。Admin認証情報を確認してください。');
+  }
+}
 export const adminDatabase = () => getFirestore(adminApp());
