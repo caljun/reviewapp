@@ -17,7 +17,7 @@ export function errorResponse(error: unknown) {
   const safe = isApiError(error) ? error : new ApiError(500, 'SERVER_ERROR', 'サーバー処理に失敗しました。時間をおいて再試行してください。');
   return Response.json({ code: safe.code, error: safe.message }, {
     status: safe.status,
-    headers: { 'Cache-Control': 'no-store', 'X-ReviewScope-Revision': 'auth-v4' },
+    headers: { 'Cache-Control': 'no-store', 'X-ReviewScope-Revision': 'auth-v5' },
   });
 }
 
