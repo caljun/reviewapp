@@ -184,3 +184,15 @@ test('specific safe authentication errors are preserved', async () => {
   assert.equal(response.status, 401);
   assert.equal(await code(response), 'TOKEN_PROJECT_MISMATCH');
 });
+
+test('API errors from a separately bundled server chunk are preserved structurally', async () => {
+  const { quota } = setup();
+  const handler = createProtectedAnalysis({
+    quota,
+    verify: async () => { throw { name: 'ApiError', status: 401, code: 'TOKEN_PROJECT_MISMATCH', message: 'プロジェクトが一致しません。' }; },
+    generate: async () => ({ text: 'never' }),
+  });
+  const response = await handler(request(input()));
+  assert.equal(response.status, 401);
+  assert.equal(await code(response), 'TOKEN_PROJECT_MISMATCH');
+});
