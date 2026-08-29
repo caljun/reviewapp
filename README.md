@@ -32,7 +32,7 @@ npm run build
 ## 認証・分析フロー
 
 1. Firebase Authのローカル永続化と `onAuthStateChanged` による既存Googleユーザー復元を待つ。
-2. 未ログイン時は `GoogleAuthProvider` と `signInWithPopup` でログインする。匿名認証は使用しない。
+2. 未ログイン時はGoogleまたはメールアドレス・パスワードでログインする。
 3. `GET /api/usage` にIDトークンを送信。Admin SDKで検証し、未登録なら `users/{uid}` を作成。既存値は変更しない。
 4. ブラウザでUUIDのrequestIdを生成。`POST /api/analyze` にIDトークンと入力配列を送る。
 5. トークン検証 → 入力検証 → 利用枠トランザクション予約 → Gemini → 完了記録 → 結果表示。
@@ -95,7 +95,7 @@ Firestoreのテストは原子的なインメモリアダプター、認証とGe
 1. VercelにAdminの3変数を追加（Production、必要ならPreviewも）。既存Firebase/Gemini変数は維持。
 2. 変更をコミット・GitHubへpushし、Vercelで再デプロイ。Build Commandは `npm run build`。
 3. ルールを反映する場合は `firebase deploy --only firestore:rules --project reviewapp-979b5`。全拒否の方針は変わりません。
-4. Firebase AuthenticationでGoogleプロバイダを有効化し、承認済みドメインに本番ドメインを登録する。匿名プロバイダは無効化する。
+4. Firebase AuthenticationでGoogleとメール／パスワードを有効化し、承認済みドメインに本番ドメインを登録する。
 5. Googleでログインし、Firestoreに残り10レビューでユーザーが作成され、リロード後も同じログイン状態であることを確認。
 6. 3レビューを分析し、残り7・request completedになること、残り数を超える分析が403になることを確認。
 7. 同じrequestIdのPOSTが409、リクエストドキュメントと利用枠が増減しないことを確認。

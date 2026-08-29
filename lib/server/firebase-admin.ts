@@ -34,13 +34,18 @@ export async function verifyToken(token: string) {
   if (envelope.aud !== projectId || envelope.iss !== `https://securetoken.google.com/${projectId}`) {
     throw new ApiError(401, 'TOKEN_PROJECT_MISMATCH', 'FirebaseのWeb設定とAdmin設定のプロジェクトが一致していません。');
   }
+  let decoded;
   try {
-    return await getAuth(adminApp()).verifyIdToken(token);
+    decoded = await getAuth(adminApp()).verifyIdToken(token);
   } catch (error) {
     const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
     if (code === 'auth/id-token-expired') throw new ApiError(401, 'ID_TOKEN_EXPIRED', '認証の有効期限が切れました。再試行してください。');
     if (code === 'auth/id-token-revoked' || code === 'auth/user-disabled') throw new ApiError(401, 'ID_TOKEN_REJECTED', 'この認証情報は利用できません。');
     throw new ApiError(401, 'ID_TOKEN_VERIFICATION_FAILED', 'Firebase IDトークンを検証できませんでした。Admin認証情報を確認してください。');
   }
+  if (!decoded.email) {
+    throw new ApiError(401, 'LOGIN_REQUIRED', 'ログインしてください。');
+  }
+  return decoded;
 }
 export const adminDatabase = () => getFirestore(adminApp());

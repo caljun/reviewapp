@@ -2,13 +2,14 @@
 
 import './quota.css';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { reviewInputSchema } from '@/lib/analyze-input';
 import { type SimpleAnalysis } from '@/lib/simple-analysis';
 import Results from './results';
 import CsvInput, { type CsvInputState } from './csv-input';
 import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import { useAnalysisSession } from './use-analysis-session';
+import LoginModal from './login-modal';
 
 const sample = `★1
 アップデート後にアプリが起動しなくなりました。早く直してほしいです。
@@ -52,6 +53,8 @@ export default function Home() {
   const [error, setError] = useState('');
   const [result, setResult] = useState<SimpleAnalysis | null>(null);
   const [analysisText, setAnalysisText] = useState('');
+  const [showLogin, setShowLogin] = useState(false);
+  const [pendingAnalysis, setPendingAnalysis] = useState(false);
   const inFlight = useRef(false);
   const attempt = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const textReviews = useMemo(() => splitReviews(text), [text]);
@@ -100,19 +103,30 @@ export default function Home() {
       await session.refresh();
     }
   };
+  const analyzeRef = useRef(analyze);
+  useEffect(() => { analyzeRef.current = analyze; });
+  useEffect(() => {
+    if (pendingAnalysis && canAnalyze) {
+      const timer = window.setTimeout(() => { setPendingAnalysis(false); void analyzeRef.current(); }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [pendingAnalysis, canAnalyze]);
+  const requestAnalysis = () => {
+    setError('');
+    if (!session.user) { setPendingAnalysis(true); setShowLogin(true); return; }
+    if (!session.usage || session.usage.remainingReviews < reviews.length) { setError('レビュー枠が不足しています'); return; }
+    void analyze();
+  };
 
   return <main>
     <header className="site-header"><button className="brand" disabled={loading} onClick={() => setView('input')} aria-label="ReviewScope ホーム"><span className="brand-mark">R</span><span>ReviewScope</span></button><span className="prototype-badge">PROTOTYPE</span></header>
     {view !== 'result' ? <div className="page-shell input-shell">
       <section className="hero"><span className="eyebrow">AI REVIEW ANALYSIS</span><h1>大量のレビューから、<br /><em>次に直すべきこと</em>を見つける。</h1><p>レビューをまとめて貼り付けるだけ。よくある不満を分類・集計し、改善の優先順位を整理します。</p></section>
       <section className="panel input-panel">
-        <div className="quota-notice" aria-live="polite">
-          {session.busy ? <p>認証を確認しています</p> : !session.user ? <>
-            <p>{session.error || 'Googleでログインすると10レビュー無料'}</p><button className="secondary" onClick={() => void session.login()}>Googleでログイン</button>
-          </> : session.error ? <><p role="alert">{session.error}</p><button className="secondary" onClick={() => void session.refresh()}>利用枠を再確認</button><button className="link-button" onClick={() => void session.logout()}>ログアウト</button></> : session.usage && <>
-            <p>残り無料レビュー数：{session.usage.remainingReviews}</p>{session.usage.remainingReviews < reviews.length && <p>レビュー枠が不足しています</p>}<button className="link-button" onClick={() => void session.logout()}>ログアウト</button>
-          </>}
-        </div>
+        {session.user && <div className="quota-notice" aria-live="polite">
+          {session.busy ? <p>利用枠を確認しています</p> : session.error ? <><p role="alert">{session.error}</p><button className="secondary" onClick={() => void session.refresh()}>利用枠を再確認</button></> : session.usage && <p>残り無料レビュー数：{session.usage.remainingReviews}</p>}
+          <button className="link-button" onClick={() => void session.logout()}>ログアウト</button>
+        </div>}
         <div className="steps" aria-label="進捗"><span className="active"><b>1</b>レビュー入力</span><i /><span className={view === 'preview' ? 'active' : ''}><b>2</b>内容を確認</span><i /><span><b>3</b>分析結果</span></div>
         <div hidden={view !== 'input'}>
           <div className="field-row"><label className="field"><span>アプリ名 <small>任意</small></span><input maxLength={100} value={appName} onChange={(e) => setAppName(e.target.value)} placeholder="例：Habit Note" /></label><label className="field"><span>特に知りたいこと <small>任意</small></span><input maxLength={500} value={focus} onChange={(e) => setFocus(e.target.value)} /></label></div>
@@ -126,12 +140,13 @@ export default function Home() {
         </div><div hidden={view !== 'preview'}>
           <div className="preview-heading"><div><span className="eyebrow">PREVIEW</span><h2>{reviews.length}件のレビューを確認</h2></div><button className="link-button" disabled={loading} onClick={() => setView('input')}>← 入力を編集</button></div>
           <div className="review-list">{reviews.map((review, index) => <article className="review-item" key={`${review.text}-${index}`}><span className="number">{String(index + 1).padStart(2, '0')}</span><div><span className="stars">{review.rating ? '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating) : '評価なし'}</span><p>{review.text}</p></div></article>)}</div>
-          <div className="panel-footer sticky"><p>{appName || 'アプリ名未設定'} ・ {reviews.length}件を分析</p><button className="primary" onClick={analyze} disabled={loading || !canAnalyze}>{loading ? '分析しています…' : error ? '再試行する' : 'AIで分析する'} <span>{loading ? '◌' : '✦'}</span></button></div>
+          <div className="panel-footer sticky"><p>{appName || 'アプリ名未設定'} ・ {reviews.length}件を分析</p><button className="primary" onClick={requestAnalysis} disabled={loading || session.busy || !validInput}>{loading ? '分析しています…' : error ? '再試行する' : 'AIで分析する'} <span>{loading ? '◌' : '✦'}</span></button></div>
         </div>
         {loading && <p role="status" className="privacy-note">レビューを分析しています。このままお待ちください。</p>}
         {error && <p role="alert" className="error-message">{error}</p>}
         {!validInput && <p className="error-message">レビューは1〜50件、各2,000文字、合計50,000文字まで入力できます。</p>}
       </section><p className="privacy-note">分析時にレビューをGoogle Geminiへ送信します。本アプリでは保存しません。個人情報・機密情報は入力しないでください。</p>
     </div> : analysisText ? <div className="page-shell results-shell"><section className="panel compact-card"><div className="section-heading"><h2>レビュー分析（自由文）</h2><button className="secondary" onClick={() => setView('input')}>入力へ戻る</button></div><p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9, marginTop: 24 }}>{analysisText}</p></section></div> : result && <Results result={result} appName={appName} onReset={() => setView('input')} />}
+    {showLogin && <LoginModal busy={session.busy} error={session.error} onClose={() => { setShowLogin(false); if (!session.user) setPendingAnalysis(false); }} onGoogle={session.login} onEmail={session.loginWithEmail} />}
   </main>;
 }

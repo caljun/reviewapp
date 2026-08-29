@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { Usage } from '@/lib/analyze-input';
-import { firebaseSignOut, googleSignIn, observeUser } from '@/lib/firebase-auth';
+import { emailSignIn, emailSignUp, firebaseSignOut, googleSignIn, observeUser } from '@/lib/firebase-auth';
 import { authenticatedFetch } from '@/lib/authenticated-fetch';
 
 export function useAnalysisSession() {
@@ -32,9 +32,14 @@ export function useAnalysisSession() {
   const login = useCallback(async () => {
     setBusy(true); setError('');
     try { await googleSignIn(); }
-    catch (value) { setBusy(false); setError(value instanceof Error && value.message.includes('popup-closed') ? 'ログインがキャンセルされました。' : 'Googleログインに失敗しました。'); }
+    catch (value) { setBusy(false); setError(value instanceof Error && value.message.includes('popup-closed') ? 'ログインがキャンセルされました。' : 'Googleログインに失敗しました。'); throw new Error('LOGIN_FAILED'); }
+  }, []);
+  const loginWithEmail = useCallback(async (email: string, password: string, create: boolean) => {
+    setBusy(true); setError('');
+    try { await (create ? emailSignUp(email, password) : emailSignIn(email, password)); }
+    catch { setBusy(false); setError(create ? 'アカウントを作成できませんでした。入力内容を確認してください。' : 'メールアドレスまたはパスワードが正しくありません。'); throw new Error('LOGIN_FAILED'); }
   }, []);
   const logout = useCallback(async () => { setBusy(true); setError(''); try { await firebaseSignOut(); } catch { setBusy(false); setError('ログアウトに失敗しました。'); } }, []);
   const refresh = useCallback(async () => { if (currentUser.current) await loadUsage(currentUser.current); }, [loadUsage]);
-  return { user, usage, busy, error, login, logout, refresh };
+  return { user, usage, busy, error, login, loginWithEmail, logout, refresh };
 }
