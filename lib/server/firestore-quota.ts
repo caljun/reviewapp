@@ -1,4 +1,3 @@
-import 'server-only';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDatabase } from './firebase-admin';
 import { createQuota, type UserRecord, type RequestRecord } from './quota';
