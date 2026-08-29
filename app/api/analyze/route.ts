@@ -1,17 +1,22 @@
 import { GoogleGenAI } from '@google/genai';
 import { parseSimpleAnalysis } from '@/lib/simple-analysis';
 import { createProtectedAnalysis } from '@/lib/server/protected-analysis';
-import { verifyToken } from '@/lib/server/firebase-admin';
-import { quota } from '@/lib/server/firestore-quota';
 import { ApiError } from '@/lib/server/api-error';
+import type { Quota } from '@/lib/server/quota';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 // Plain text generation with a JSON-only prompt. No schema, Zod or retry.
+const lazyQuota: Quota = {
+  usage: async uid => (await import('@/lib/server/firestore-quota')).quota.usage(uid),
+  reserve: async (uid, id, count) => (await import('@/lib/server/firestore-quota')).quota.reserve(uid, id, count),
+  settle: async (uid, id, status) => (await import('@/lib/server/firestore-quota')).quota.settle(uid, id, status),
+};
+
 export const POST = createProtectedAnalysis({
-  verify: verifyToken,
-  quota,
+  verify: async token => (await import('@/lib/server/firebase-admin')).verifyToken(token),
+  quota: lazyQuota,
   generate: async ({ appName, focus, reviews }) => {
     if (!process.env.GEMINI_API_KEY?.trim()) throw new ApiError(500, 'SERVER_CONFIGURATION_ERROR', 'サーバーの分析設定が完了していません。');
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });

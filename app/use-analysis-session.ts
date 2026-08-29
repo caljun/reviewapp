@@ -19,7 +19,8 @@ export function useAnalysisSession() {
     try {
       const nextUser = await ensureAnonymousSession();
       const response = await authenticatedFetch(nextUser, '/api/usage', { signal: AbortSignal.timeout(15000) });
-      const data = await response.json() as Partial<Usage> & { error?: string };
+      const data = await response.json().catch(() => null) as (Partial<Usage> & { error?: string }) | null;
+      if (!data) throw new Error('サーバーの認証処理に失敗しました。再デプロイ後に再試行してください。');
       if (!response.ok) throw new Error(data.error || '利用枠を確認できませんでした。');
       if (typeof data.freeAnalysisUsed !== 'boolean' || !Number.isSafeInteger(data.remainingCredits) || data.remainingCredits! < 0) throw new Error('利用枠を確認できませんでした。');
       if (generation.current === current) {
