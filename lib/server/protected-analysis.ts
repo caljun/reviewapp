@@ -3,7 +3,7 @@ import { ApiError, authenticate, errorResponse } from './api-error';
 import type { Quota } from './quota';
 
 type Dependencies = {
-  verify: (token: string) => Promise<{ uid: string }>;
+  verify: (token: string) => Promise<{ uid: string; email?: string; name?: string }>;
   quota: Quota;
   generate: (input: AnalyzeInput) => Promise<unknown>;
 };
@@ -35,9 +35,10 @@ async function readInput(request: Request) {
 export function createProtectedAnalysis(deps: Dependencies) {
   return async function POST(request: Request) {
     try {
-      const uid = await authenticate(request, deps.verify);
+      const identity = await authenticate(request, deps.verify);
+      const uid = identity.uid;
       const input = await readInput(request);
-      await deps.quota.usage(uid);
+      await deps.quota.usage(uid, { email: identity.email ?? '', displayName: identity.name ?? null });
       await deps.quota.reserve(uid, input.requestId, input.reviews.length);
       let result: unknown;
       try { result = await deps.generate(input); }

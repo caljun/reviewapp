@@ -12,4 +12,4 @@ export const reviewInputSchema = z.object({
 
 export const analyzeInputSchema = reviewInputSchema.and(z.object({ requestId: z.uuid() }));
 export type AnalyzeInput = z.infer<typeof analyzeInputSchema>;
-export type Usage = { freeAnalysisUsed: boolean; remainingCredits: number };
+export type Usage = { remainingReviews: number };

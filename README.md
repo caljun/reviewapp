@@ -1,6 +1,6 @@
 # ReviewScope
 
-Next.js 16 / React 19 / Firebase匿名認証・Firestore利用枠管理 / Geminiレビュー分析。
+Next.js 16 / React 19 / Firebase Google認証・Firestore利用枠管理 / Geminiレビュー分析。
 CSV入力、Markdownコピー、ランキングCSVダウンロードに対応。
 Stripe、決済、Google・メールログイン、分析履歴、レビュー保存、Storageは未実装。
 
@@ -31,8 +31,8 @@ npm run build
 
 ## 認証・分析フロー
 
-1. Firebase Authのローカル永続化と `onAuthStateChanged` による既存ユーザー復元を待つ。
-2. ユーザーがない場合だけ `signInAnonymously`。同時初期化は同じPromiseを共有。
+1. Firebase Authのローカル永続化と `onAuthStateChanged` による既存Googleユーザー復元を待つ。
+2. 未ログイン時は `GoogleAuthProvider` と `signInWithPopup` でログインする。匿名認証は使用しない。
 3. `GET /api/usage` にIDトークンを送信。Admin SDKで検証し、未登録なら `users/{uid}` を作成。既存値は変更しない。
 4. ブラウザでUUIDのrequestIdを生成。`POST /api/analyze` にIDトークンと入力配列を送る。
 5. トークン検証 → 入力検証 → 利用枠トランザクション予約 → Gemini → 完了記録 → 結果表示。
@@ -52,20 +52,19 @@ Geminiの簡易JSON方式は維持しています。appName・focus・reviewsを
 
 ## 利用枠と保存データ
 
-`users/{uid}`：`freeAnalysisUsed`, `remainingCredits`, `createdAt`, `updatedAt`。
-初期値は無料未使用・0クレジットです。
+`users/{uid}`：`email`, `displayName`, `remainingReviews`, `createdAt`, `updatedAt`。
+初回Googleログイン時だけ残り10レビューで作成し、既存ユーザーの残高は上書きしません。
 
-`analysisRequests/{requestId}`：`uid`, `reviewCount`, `source`（free/credit）, `status`（reserved/completed/refunded）, `createdAt`, `updatedAt`。
+`analysisRequests/{requestId}`：`uid`, `reviewCount`, `status`（reserved/completed/refunded）, `createdAt`, `updatedAt`。
 タイムスタンプにはFirestoreのサーバー時刻を使用します。
 レビュー本文、分析結果、アプリ名、focus、CSV、IDトークンはFirestoreへ保存しません。
 
-- 未使用の無料枠があり10件以内なら無料枠を予約。
-- それ以外は1クレジットで最大50件。残高がなければ403。
-- 予約時に無料使用済み／クレジット減算とrequest作成を同一トランザクションで実施。
+- 分析件数分を `remainingReviews` から予約時に減算し、残高不足なら403。
+- 将来Stripeから同じ残高へレビュー枠を追加できる構造です。今回決済は未実装です。
 - 成功時はcompleted。Gemini失敗時はreservedからrefundedへ遷移し、同じトランザクションで返金。
 - refunded/completedは再返金しない。同一requestIdは409で拒否し、再分析・再消費しない。
 - 通信不明時の画面内再試行は同じrequestIdを保持。明示的な失敗・返金確認後は新しいIDを使用。
-- クライアントから残高を編集する機能はありません。Firestore Rulesは匿名認証済みも含め全拒否。Admin SDKのみ操作します。
+- クライアントから残高を編集する機能はありません。Firestore Rulesは認証済みも含め全拒否。Admin SDKのみ操作します。
 - `firebase.json` はFirestoreのみ対象。既存の `storage.rules` は今回の対象外で、デプロイしません。
 
 ## APIエラー
@@ -74,8 +73,7 @@ Geminiの簡易JSON方式は維持しています。appName・focus・reviewsを
 | --- | --- | --- |
 | 400 | INVALID_INPUT | 型・件数・文字数・UUID・JSON不正 |
 | 401 | UNAUTHORIZED | トークンなし／形式不正／無効／期限切れ |
-| 403 | PAID_PLAN_REQUIRED | 無料で11件以上、クレジットなし |
-| 403 | FREE_LIMIT_REACHED | 無料使用済み、クレジットなし |
+| 403 | INSUFFICIENT_REVIEWS | 残りレビュー数が分析件数より少ない |
 | 409 | REQUEST_RESERVED / REQUEST_COMPLETED / REQUEST_REFUNDED | 同じIDは受付済み |
 | 409 | REQUEST_CONFLICT | 別ユーザーが所有するID |
 | 500 | SERVER_CONFIGURATION_ERROR | AdminまたはGeminiの設定不足・初期化失敗 |
@@ -97,9 +95,9 @@ Firestoreのテストは原子的なインメモリアダプター、認証とGe
 1. VercelにAdminの3変数を追加（Production、必要ならPreviewも）。既存Firebase/Gemini変数は維持。
 2. 変更をコミット・GitHubへpushし、Vercelで再デプロイ。Build Commandは `npm run build`。
 3. ルールを反映する場合は `firebase deploy --only firestore:rules --project reviewapp-979b5`。全拒否の方針は変わりません。
-4. 通常ブラウザで開き、Firebase Authenticationコンソールに匿名ユーザーが作られること、リロード後に同じUIDで新規作成が増えないことを確認。
-5. 無料状態で11件入力時はボタン無効。開発者ツールから有効トークン付きで11件を直接POSTして403を確認。
-6. 10件以内で1回分析して成功、Firestoreのuser無料使用済み・request completedを確認。2回目の直接POSTが403であることを確認。
+4. Firebase AuthenticationでGoogleプロバイダを有効化し、承認済みドメインに本番ドメインを登録する。匿名プロバイダは無効化する。
+5. Googleでログインし、Firestoreに残り10レビューでユーザーが作成され、リロード後も同じログイン状態であることを確認。
+6. 3レビューを分析し、残り7・request completedになること、残り数を超える分析が403になることを確認。
 7. 同じrequestIdのPOSTが409、リクエストドキュメントと利用枠が増減しないことを確認。
 8. Authorizationなし・無効トークンが401、正常認証付きの不正入力が400であることを確認。
 9. CSVの列選択・プレビュー、ランキング、Markdownコピー、CSV保存を確認。
@@ -108,9 +106,9 @@ Firestoreのテストは原子的なインメモリアダプター、認証とGe
 
 ## 既知の制限・運用注意
 
-- 「無料1回」はUID単位です。ブラウザデータ削除・別ブラウザ等で新しい匿名UIDを作れるため、1人1回の厳密な保証やボット対策ではありません。App Check・レート制限・予算上限等は別途必要です。
+- 利用枠はGoogleログインのUID単位です。複数Googleアカウントによる重複取得やボット対策には、将来App Check・レート制限等が別途必要です。
 - プロセス強制終了やFirestore障害ではreservedが残る可能性があります。自動回収ジョブは今回未実装。503時や予約滞留時は、実行が停止済みか管理者が確認してからトランザクションで返金してください。
 - completedの結果は保存しないため、レスポンス受信前の切断やリロードで結果を失うと再取得できません。同じIDでの再分析はしません。
 - 残高表示は他タブの操作と一時的にずれる場合がありますが、サーバーのトランザクションで制限を強制します。
-- ブラウザの匿名認証永続化、実Admin権限、実Firestoreトランザクション、本番Geminiの通し確認は上記手順で実施してください。
+- Googleログイン永続化、実Admin権限、実Firestoreトランザクション、本番Geminiの通し確認は上記手順で実施してください。
 - 本アプリはレビュー本文を保存しませんが、Google側の取扱いは各APIの契約・利用条件に依存します。

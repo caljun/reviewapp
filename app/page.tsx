@@ -60,7 +60,7 @@ export default function Home() {
   const payload = { appName, focus, reviews: reviews.map((r, id) => ({ ...r, id })) };
   const validInput = reviewInputSchema.safeParse(payload).success && (inputMode !== 'csv' || (!csv.busy && !csv.error));
   const canAnalyze = validInput && !session.busy && !!session.user && !!session.usage
-    && (session.usage.remainingCredits > 0 || (!session.usage.freeAnalysisUsed && reviews.length <= 10));
+    && session.usage.remainingReviews >= reviews.length;
   const analyze = async () => {
     if (inFlight.current || !canAnalyze || !session.user) return;
     inFlight.current = true;
@@ -107,9 +107,10 @@ export default function Home() {
       <section className="hero"><span className="eyebrow">AI REVIEW ANALYSIS</span><h1>大量のレビューから、<br /><em>次に直すべきこと</em>を見つける。</h1><p>レビューをまとめて貼り付けるだけ。よくある不満を分類・集計し、改善の優先順位を整理します。</p></section>
       <section className="panel input-panel">
         <div className="quota-notice" aria-live="polite">
-          {session.busy ? <p>認証を準備しています</p> : session.error ? <><p role="alert">{session.error}</p><button className="secondary" onClick={() => void session.refresh()}>認証・利用枠を再確認</button></> : session.usage && <>
-            <p>{session.usage.freeAnalysisUsed ? '無料枠を利用済みです' : '無料分析を1回利用できます（最大10レビュー）'}{session.usage.remainingCredits > 0 && ` ・ 残り${session.usage.remainingCredits}クレジット`}</p>
-            {session.usage.remainingCredits === 0 && (session.usage.freeAnalysisUsed || reviews.length > 10) && <p>有料プランの準備中です。{!session.usage.freeAnalysisUsed && '無料分析は10件以内にしてください。'}</p>}
+          {session.busy ? <p>認証を確認しています</p> : !session.user ? <>
+            <p>{session.error || 'Googleでログインすると10レビュー無料'}</p><button className="secondary" onClick={() => void session.login()}>Googleでログイン</button>
+          </> : session.error ? <><p role="alert">{session.error}</p><button className="secondary" onClick={() => void session.refresh()}>利用枠を再確認</button><button className="link-button" onClick={() => void session.logout()}>ログアウト</button></> : session.usage && <>
+            <p>残り無料レビュー数：{session.usage.remainingReviews}</p>{session.usage.remainingReviews < reviews.length && <p>レビュー枠が不足しています</p>}<button className="link-button" onClick={() => void session.logout()}>ログアウト</button>
           </>}
         </div>
         <div className="steps" aria-label="進捗"><span className="active"><b>1</b>レビュー入力</span><i /><span className={view === 'preview' ? 'active' : ''}><b>2</b>内容を確認</span><i /><span><b>3</b>分析結果</span></div>

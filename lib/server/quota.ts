@@ -1,9 +1,10 @@
 import type { Usage } from '../analyze-input';
 import { ApiError } from './api-error';
 
-export type UserRecord = Usage & { createdAt: unknown; updatedAt: unknown };
+export type UserProfile = { email: string; displayName: string | null };
+export type UserRecord = Usage & UserProfile & { createdAt: unknown; updatedAt: unknown };
 export type RequestRecord = {
-  uid: string; reviewCount: number; source: 'free' | 'credit';
+  uid: string; reviewCount: number;
   status: 'reserved' | 'completed' | 'refunded'; createdAt: unknown; updatedAt: unknown;
 };
 export interface QuotaTransaction {
@@ -19,21 +20,23 @@ export interface QuotaStore {
 
 export function createQuota(store: QuotaStore) {
   function validUser(user: UserRecord) {
-    if (typeof user.freeAnalysisUsed !== 'boolean' || !Number.isSafeInteger(user.remainingCredits) || user.remainingCredits < 0) {
+    if (!Number.isSafeInteger(user.remainingReviews) || user.remainingReviews < 0 || typeof user.email !== 'string'
+      || !(typeof user.displayName === 'string' || user.displayName === null)) {
       throw new ApiError(500, 'USAGE_DATA_ERROR', '利用枠を確認できませんでした。');
     }
     return user;
   }
   return {
-    async usage(uid: string): Promise<Usage> {
+    async usage(uid: string, profile?: UserProfile): Promise<Usage> {
       return store.transaction(async tx => {
         let user = await tx.user(uid);
         if (!user) {
-          user = { freeAnalysisUsed: false, remainingCredits: 0, createdAt: store.now(), updatedAt: store.now() };
+          if (!profile?.email) throw new ApiError(401, 'ACCOUNT_EMAIL_REQUIRED', 'Googleアカウントのメールアドレスを確認できません。');
+          user = { email: profile.email, displayName: profile.displayName, remainingReviews: 10, createdAt: store.now(), updatedAt: store.now() };
           tx.writeUser(uid, user);
         }
         validUser(user);
-        return { freeAnalysisUsed: user.freeAnalysisUsed, remainingCredits: user.remainingCredits };
+        return { remainingReviews: user.remainingReviews };
       });
     },
     async reserve(uid: string, id: string, reviewCount: number) {
@@ -46,15 +49,10 @@ export function createQuota(store: QuotaStore) {
         }
         if (!stored) throw new ApiError(500, 'USAGE_DATA_ERROR', '利用者情報を確認できませんでした。');
         const user = validUser(stored);
-        const source = !user.freeAnalysisUsed && reviewCount <= 10 ? 'free' : 'credit';
-        if (source === 'credit' && user.remainingCredits < 1) {
-          throw reviewCount > 10
-            ? new ApiError(403, 'PAID_PLAN_REQUIRED', '無料分析は10件までです。有料プランは準備中です。')
-            : new ApiError(403, 'FREE_LIMIT_REACHED', '無料枠を利用済みです。有料プランは準備中です。');
-        }
+        if (user.remainingReviews < reviewCount) throw new ApiError(403, 'INSUFFICIENT_REVIEWS', 'レビュー枠が不足しています。');
         const now = store.now();
-        tx.writeUser(uid, { ...user, freeAnalysisUsed: source === 'free' ? true : user.freeAnalysisUsed, remainingCredits: user.remainingCredits - (source === 'credit' ? 1 : 0), updatedAt: now });
-        tx.writeRequest(id, { uid, reviewCount, source, status: 'reserved', createdAt: now, updatedAt: now });
+        tx.writeUser(uid, { ...user, remainingReviews: user.remainingReviews - reviewCount, updatedAt: now });
+        tx.writeRequest(id, { uid, reviewCount, status: 'reserved', createdAt: now, updatedAt: now });
       });
     },
     async settle(uid: string, id: string, status: 'completed' | 'refunded') {
@@ -66,8 +64,7 @@ export function createQuota(store: QuotaStore) {
         const user = validUser(stored);
         const now = store.now();
         if (status === 'refunded') tx.writeUser(uid, {
-          ...user, freeAnalysisUsed: request.source === 'free' ? false : user.freeAnalysisUsed,
-          remainingCredits: user.remainingCredits + (request.source === 'credit' ? 1 : 0), updatedAt: now,
+          ...user, remainingReviews: user.remainingReviews + request.reviewCount, updatedAt: now,
         });
         tx.writeRequest(id, { ...request, status, updatedAt: now });
       });
