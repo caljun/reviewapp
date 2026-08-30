@@ -4,11 +4,23 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { ApiError } from './api-error';
 
+function normalizeValue(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === 'string') return parsed.trim();
+    } catch { /* Fall through to plain environment-variable handling. */ }
+  }
+  return trimmed;
+}
+
 function adminApp() {
   if (getApps().length) return getApps()[0];
-  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID?.trim();
-  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL?.trim();
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.trim().replace(/\\n/g, '\n');
+  const projectId = normalizeValue(process.env.FIREBASE_ADMIN_PROJECT_ID);
+  const clientEmail = normalizeValue(process.env.FIREBASE_ADMIN_CLIENT_EMAIL);
+  const privateKey = normalizeValue(process.env.FIREBASE_ADMIN_PRIVATE_KEY).replace(/\\n/g, '\n');
   if (!projectId || !clientEmail || !privateKey) {
     throw new ApiError(500, 'ADMIN_INIT_FAILED', 'サーバーの認証初期化に失敗しました。');
   }
