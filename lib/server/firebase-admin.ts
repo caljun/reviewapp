@@ -22,10 +22,10 @@ function adminApp() {
   const clientEmail = normalizeValue(process.env.FIREBASE_ADMIN_CLIENT_EMAIL);
   const privateKey = normalizeValue(process.env.FIREBASE_ADMIN_PRIVATE_KEY).replace(/\\n/g, '\n');
   if (!projectId || !clientEmail || !privateKey) {
-    throw new ApiError(500, 'ADMIN_INIT_FAILED', 'サーバーの認証初期化に失敗しました。');
+    throw new ApiError(500, 'ADMIN_INIT_FAILED', 'サーバーのAdmin環境変数が不足しています。');
   }
   try { return initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) }); }
-  catch { throw new ApiError(500, 'ADMIN_INIT_FAILED', 'サーバーの認証初期化に失敗しました。'); }
+  catch { throw new ApiError(500, 'ADMIN_INIT_FAILED', 'サービスアカウント資格情報を読み込めませんでした。'); }
 }
 
 type TokenEnvelope = { aud?: unknown; iss?: unknown };
