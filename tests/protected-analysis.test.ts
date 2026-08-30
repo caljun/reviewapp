@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createQuota, type QuotaStore, type UserRecord, type RequestRecord } from '../lib/server/quota';
 import { createProtectedAnalysis } from '../lib/server/protected-analysis';
+import { ApiError } from '../lib/server/api-error';
+import { createFirebaseUserRequirement } from '../lib/server/require-firebase-user';
 import { authenticatedFetch } from '../lib/authenticated-fetch';
 import type { AnalyzeInput } from '../lib/analyze-input';
 
@@ -23,10 +25,24 @@ const input = (count = 1): AnalyzeInput => ({ requestId: randomUUID(), reviews: 
 const req = (body: unknown, token: string | null = 'Bearer valid') => new Request('http://x/api/analyze', { method: 'POST', headers: token ? { Authorization: token } : {}, body: JSON.stringify(body) });
 function setup(generate: (value: AnalyzeInput) => Promise<unknown> = async () => ({ text: 'ok' })) {
   const store = new MemoryStore(); const quota = createQuota(store);
-  const handler = createProtectedAnalysis({ quota, generate, verify: async token => { if (token !== 'valid') throw Error('invalid'); return identity; } });
+  const handler = createProtectedAnalysis({ quota, generate, authenticate: async request => {
+    if (request.headers.get('Authorization') !== 'Bearer valid') throw new ApiError(401, 'TOKEN_VERIFY_FAILED', 'invalid');
+    return identity;
+  } });
   return { store, quota, handler };
 }
 const code = async (response: Response) => (await response.json() as { code: string }).code;
+
+test('shared Firebase requirement distinguishes missing, malformed and rejected tokens', async () => {
+  const requireUser = createFirebaseUserRequirement(async token => {
+    if (token !== 'valid') throw new ApiError(401, 'TOKEN_VERIFY_FAILED', 'invalid');
+    return identity;
+  });
+  await assert.rejects(() => requireUser(new Request('http://x')), (error: ApiError) => error.code === 'NO_AUTH_HEADER');
+  await assert.rejects(() => requireUser(new Request('http://x', { headers: { Authorization: 'Basic x' } })), (error: ApiError) => error.code === 'INVALID_BEARER_FORMAT');
+  await assert.rejects(() => requireUser(new Request('http://x', { headers: { Authorization: 'Bearer bad' } })), (error: ApiError) => error.code === 'TOKEN_VERIFY_FAILED');
+  assert.equal((await requireUser(new Request('http://x', { headers: { Authorization: 'Bearer valid' } }))).uid, identity.uid);
+});
 
 test('missing and invalid authentication are 401 with no user or analysis', async () => {
   const { handler, store } = setup();

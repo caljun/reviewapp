@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { parseSimpleAnalysis } from '@/lib/simple-analysis';
 import { createProtectedAnalysis } from '@/lib/server/protected-analysis';
-import { verifyToken } from '@/lib/server/firebase-admin';
+import { requireFirebaseUser } from '@/lib/server/firebase-user';
 import { quota } from '@/lib/server/firestore-quota';
 import { ApiError } from '@/lib/server/api-error';
 
@@ -10,7 +10,7 @@ export const maxDuration = 60;
 
 // Plain text generation with a JSON-only prompt. No schema, Zod or retry.
 export const POST = createProtectedAnalysis({
-  verify: verifyToken,
+  authenticate: requireFirebaseUser,
   quota,
   generate: async ({ appName, focus, reviews }) => {
     if (!process.env.GEMINI_API_KEY?.trim()) throw new ApiError(500, 'SERVER_CONFIGURATION_ERROR', 'サーバーの分析設定が完了していません。');

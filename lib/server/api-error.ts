@@ -20,13 +20,3 @@ export function errorResponse(error: unknown) {
     headers: { 'Cache-Control': 'no-store', 'X-ReviewScope-Revision': 'google-auth-v2' },
   });
 }
-
-export async function authenticate<T extends { uid: string }>(request: Request, verify: (token: string) => Promise<T>): Promise<T> {
-  const match = request.headers.get('Authorization')?.match(/^Bearer ([^\s]+)$/i);
-  if (!match) throw new ApiError(401, 'UNAUTHORIZED', '認証が必要です。再試行してください。');
-  try { return await verify(match[1]); }
-  catch (error) {
-    if (isApiError(error)) throw error;
-    throw new ApiError(401, 'UNAUTHORIZED', '認証の有効期限が切れたか、認証情報が無効です。再試行してください。');
-  }
-}

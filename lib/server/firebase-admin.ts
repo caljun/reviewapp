@@ -1,19 +1,19 @@
+import 'server-only';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { ApiError } from './api-error';
 
 function adminApp() {
-  const existing = getApps().find(app => app.name === 'reviewscope-admin');
-  if (existing) return existing;
-  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
-  if (!projectId?.trim() || !clientEmail?.trim() || !privateKey?.trim()) {
-    throw new ApiError(500, 'SERVER_CONFIGURATION_ERROR', 'サーバーの認証設定が完了していません。');
+  if (getApps().length) return getApps()[0];
+  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID?.trim();
+  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL?.trim();
+  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.trim().replace(/\\n/g, '\n');
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new ApiError(500, 'ADMIN_INIT_FAILED', 'サーバーの認証初期化に失敗しました。');
   }
-  try { return initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) }, 'reviewscope-admin'); }
-  catch { throw new ApiError(500, 'SERVER_CONFIGURATION_ERROR', 'サーバーの認証設定を確認してください。'); }
+  try { return initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) }); }
+  catch { throw new ApiError(500, 'ADMIN_INIT_FAILED', 'サーバーの認証初期化に失敗しました。'); }
 }
 
 type TokenEnvelope = { aud?: unknown; iss?: unknown };
@@ -23,7 +23,7 @@ function tokenEnvelope(token: string): TokenEnvelope {
     const part = token.split('.')[1];
     return JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) as TokenEnvelope;
   } catch {
-    throw new ApiError(401, 'INVALID_ID_TOKEN', '認証情報の形式が不正です。再試行してください。');
+    throw new ApiError(401, 'TOKEN_VERIFY_FAILED', '認証情報を検証できませんでした。再ログインしてください。');
   }
 }
 
@@ -38,13 +38,11 @@ export async function verifyToken(token: string) {
   try {
     decoded = await getAuth(adminApp()).verifyIdToken(token);
   } catch (error) {
+    if (error instanceof ApiError) throw error;
     const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
-    if (code === 'auth/id-token-expired') throw new ApiError(401, 'ID_TOKEN_EXPIRED', '認証の有効期限が切れました。再試行してください。');
-    if (code === 'auth/id-token-revoked' || code === 'auth/user-disabled') throw new ApiError(401, 'ID_TOKEN_REJECTED', 'この認証情報は利用できません。');
-    throw new ApiError(401, 'ID_TOKEN_VERIFICATION_FAILED', 'Firebase IDトークンを検証できませんでした。Admin認証情報を確認してください。');
-  }
-  if (!decoded.email) {
-    throw new ApiError(401, 'LOGIN_REQUIRED', 'ログインしてください。');
+    if (code === 'auth/id-token-expired') throw new ApiError(401, 'TOKEN_EXPIRED', '認証の有効期限が切れました。再試行してください。');
+    console.warn('Firebase ID token verification failed', { code: code || 'UNKNOWN', projectId, aud: envelope.aud, iss: envelope.iss });
+    throw new ApiError(401, 'TOKEN_VERIFY_FAILED', '認証情報を検証できませんでした。再ログインしてください。');
   }
   return decoded;
 }

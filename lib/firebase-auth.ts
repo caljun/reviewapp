@@ -8,24 +8,19 @@ import { getFirebaseApp } from './firebase';
 let persistenceReady: Promise<void> | undefined;
 export function firebaseAuth() {
   const auth = getAuth(getFirebaseApp());
-  persistenceReady ??= (async () => {
-    await setPersistence(auth, browserLocalPersistence);
-    const version = 'google-email-v1';
-    if (localStorage.getItem('reviewscope-auth-version') !== version) {
-      await signOut(auth);
-      localStorage.setItem('reviewscope-auth-version', version);
-    }
-  })();
+  persistenceReady ??= setPersistence(auth, browserLocalPersistence);
   return { auth, ready: persistenceReady };
 }
 
 export function observeUser(next: (user: User | null) => void, error: (value: Error) => void) {
   const { auth, ready } = firebaseAuth();
   let unsubscribe = () => {};
+  let cancelled = false;
   void ready.then(() => {
+    if (cancelled) return;
     unsubscribe = onAuthStateChanged(auth, next, error);
   }).catch(error);
-  return () => unsubscribe();
+  return () => { cancelled = true; unsubscribe(); };
 }
 
 export async function googleSignIn() {

@@ -1,9 +1,9 @@
 import { analyzeInputSchema, type AnalyzeInput } from '../analyze-input';
-import { ApiError, authenticate, errorResponse } from './api-error';
+import { ApiError, errorResponse } from './api-error';
 import type { Quota } from './quota';
 
 type Dependencies = {
-  verify: (token: string) => Promise<{ uid: string; email?: string; name?: string }>;
+  authenticate: (request: Request) => Promise<{ uid: string; email?: string; name?: string }>;
   quota: Quota;
   generate: (input: AnalyzeInput) => Promise<unknown>;
 };
@@ -35,7 +35,7 @@ async function readInput(request: Request) {
 export function createProtectedAnalysis(deps: Dependencies) {
   return async function POST(request: Request) {
     try {
-      const identity = await authenticate(request, deps.verify);
+      const identity = await deps.authenticate(request);
       const uid = identity.uid;
       const input = await readInput(request);
       await deps.quota.usage(uid, { email: identity.email ?? '', displayName: identity.name ?? null });

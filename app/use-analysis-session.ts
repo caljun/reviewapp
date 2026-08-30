@@ -6,6 +6,24 @@ import type { Usage } from '@/lib/analyze-input';
 import { emailSignIn, emailSignUp, firebaseSignOut, googleSignIn, observeUser } from '@/lib/firebase-auth';
 import { authenticatedFetch } from '@/lib/authenticated-fetch';
 
+const usageRequests = new Map<string, Promise<Usage>>();
+
+function fetchUsageForUser(nextUser: User): Promise<Usage> {
+  const existing = usageRequests.get(nextUser.uid);
+  if (existing) return existing;
+  const request = (async () => {
+    const response = await authenticatedFetch(nextUser, '/api/usage', { signal: AbortSignal.timeout(15000) });
+    const data = await response.json().catch(() => null) as (Partial<Usage> & { code?: string; error?: string }) | null;
+    if (!data) throw new Error('サーバーの認証処理に失敗しました。');
+    if (!response.ok) throw new Error(`${data.error || '利用枠を確認できませんでした。'} [${data.code || `HTTP_${response.status}`}]`);
+    if (!Number.isSafeInteger(data.remainingReviews) || data.remainingReviews! < 0) throw new Error('利用枠を確認できませんでした。');
+    return { remainingReviews: data.remainingReviews! };
+  })();
+  usageRequests.set(nextUser.uid, request);
+  void request.finally(() => usageRequests.delete(nextUser.uid)).catch(() => undefined);
+  return request;
+}
+
 export function useAnalysisSession() {
   const [user, setUser] = useState<User | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -15,12 +33,8 @@ export function useAnalysisSession() {
   const loadUsage = useCallback(async (nextUser: User) => {
     setBusy(true); setError('');
     try {
-      const response = await authenticatedFetch(nextUser, '/api/usage', { signal: AbortSignal.timeout(15000) });
-      const data = await response.json().catch(() => null) as (Partial<Usage> & { code?: string; error?: string }) | null;
-      if (!data) throw new Error('サーバーの認証処理に失敗しました。');
-      if (!response.ok) throw new Error(`${data.error || '利用枠を確認できませんでした。'} [${data.code || `HTTP_${response.status}`}]`);
-      if (!Number.isSafeInteger(data.remainingReviews) || data.remainingReviews! < 0) throw new Error('利用枠を確認できませんでした。');
-      if (currentUser.current?.uid === nextUser.uid) setUsage({ remainingReviews: data.remainingReviews! });
+      const nextUsage = await fetchUsageForUser(nextUser);
+      if (currentUser.current?.uid === nextUser.uid) setUsage(nextUsage);
     } catch (value) {
       if (currentUser.current?.uid === nextUser.uid) setError(value instanceof Error && value.name !== 'TimeoutError' && !value.message.startsWith('Firebase:') ? value.message : '認証に失敗しました。再試行してください。');
     } finally { if (currentUser.current?.uid === nextUser.uid) setBusy(false); }
