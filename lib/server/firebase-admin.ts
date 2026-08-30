@@ -24,7 +24,11 @@ function normalizePrivateKey(value: string | undefined) {
   const begin = decoded.indexOf('-----BEGIN PRIVATE KEY-----');
   const endMarker = '-----END PRIVATE KEY-----';
   const end = decoded.indexOf(endMarker, begin);
-  return begin >= 0 && end >= begin ? decoded.slice(begin, end + endMarker.length) : decoded;
+  if (begin < 0 || end < begin) return decoded;
+  const bodyStart = begin + '-----BEGIN PRIVATE KEY-----'.length;
+  const body = decoded.slice(bodyStart, end).replace(/[^A-Za-z0-9+/=]/g, '');
+  const lines = body.match(/.{1,64}/g)?.join('\n') ?? '';
+  return `-----BEGIN PRIVATE KEY-----\n${lines}\n${endMarker}`;
 }
 
 function adminApp() {
