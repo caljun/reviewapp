@@ -4,42 +4,16 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { ApiError } from './api-error';
 
-function normalizeValue(value: string | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (typeof parsed === 'string') return parsed.trim();
-    } catch { /* Fall through to plain environment-variable handling. */ }
-  }
-  if (trimmed.startsWith("'") && trimmed.endsWith("'")) return trimmed.slice(1, -1).trim();
-  return trimmed;
-}
-
-function normalizePrivateKey(value: string | undefined) {
-  const decoded = normalizeValue(value)
-    .replace(/\\+r\\+n/g, '\n')
-    .replace(/\\+n/g, '\n');
-  const begin = decoded.indexOf('-----BEGIN PRIVATE KEY-----');
-  const endMarker = '-----END PRIVATE KEY-----';
-  const end = decoded.indexOf(endMarker, begin);
-  if (begin < 0 || end < begin) return decoded;
-  const bodyStart = begin + '-----BEGIN PRIVATE KEY-----'.length;
-  const body = decoded.slice(bodyStart, end).replace(/[^A-Za-z0-9+/=]/g, '');
-  const lines = body.match(/.{1,64}/g)?.join('\n') ?? '';
-  return `-----BEGIN PRIVATE KEY-----\n${lines}\n${endMarker}`;
-}
-
 function adminApp() {
-  if (getApps().length) return getApps()[0];
-  const projectId = normalizeValue(process.env.FIREBASE_ADMIN_PROJECT_ID);
-  const clientEmail = normalizeValue(process.env.FIREBASE_ADMIN_CLIENT_EMAIL);
-  const privateKey = normalizePrivateKey(process.env.FIREBASE_ADMIN_PRIVATE_KEY);
-  if (!projectId || !clientEmail || !privateKey) {
+  const existing = getApps().find(app => app.name === 'reviewscope-admin');
+  if (existing) return existing;
+  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  if (!projectId?.trim() || !clientEmail?.trim() || !privateKey?.trim()) {
     throw new ApiError(500, 'ADMIN_INIT_FAILED', 'サーバーのAdmin環境変数が不足しています。');
   }
-  try { return initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) }); }
+  try { return initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) }, 'reviewscope-admin'); }
   catch { throw new ApiError(500, 'ADMIN_INIT_FAILED', 'サービスアカウント資格情報を読み込めませんでした。'); }
 }
 
