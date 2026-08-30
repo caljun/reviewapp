@@ -13,14 +13,25 @@ function normalizeValue(value: string | undefined) {
       if (typeof parsed === 'string') return parsed.trim();
     } catch { /* Fall through to plain environment-variable handling. */ }
   }
+  if (trimmed.startsWith("'") && trimmed.endsWith("'")) return trimmed.slice(1, -1).trim();
   return trimmed;
+}
+
+function normalizePrivateKey(value: string | undefined) {
+  const decoded = normalizeValue(value)
+    .replace(/\\+r\\+n/g, '\n')
+    .replace(/\\+n/g, '\n');
+  const begin = decoded.indexOf('-----BEGIN PRIVATE KEY-----');
+  const endMarker = '-----END PRIVATE KEY-----';
+  const end = decoded.indexOf(endMarker, begin);
+  return begin >= 0 && end >= begin ? decoded.slice(begin, end + endMarker.length) : decoded;
 }
 
 function adminApp() {
   if (getApps().length) return getApps()[0];
   const projectId = normalizeValue(process.env.FIREBASE_ADMIN_PROJECT_ID);
   const clientEmail = normalizeValue(process.env.FIREBASE_ADMIN_CLIENT_EMAIL);
-  const privateKey = normalizeValue(process.env.FIREBASE_ADMIN_PRIVATE_KEY).replace(/\\n/g, '\n');
+  const privateKey = normalizePrivateKey(process.env.FIREBASE_ADMIN_PRIVATE_KEY);
   if (!projectId || !clientEmail || !privateKey) {
     throw new ApiError(500, 'ADMIN_INIT_FAILED', 'サーバーのAdmin環境変数が不足しています。');
   }
