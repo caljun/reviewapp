@@ -7,7 +7,8 @@ type StripeEvent = { type: string; data: { object: unknown } };
 export function createStripeWebhookHandler(deps: {
   secret(): string;
   construct(body: string, signature: string, secret: string): StripeEvent;
-  credit(session: { id: string; uid: string; amountTotal: number | null; currency: string | null; paymentStatus: string }): Promise<unknown>;
+  credits(planId: string): number;
+  credit(session: { id: string; uid: string; credits: number; amountTotal: number | null; currency: string | null; paymentStatus: string }): Promise<unknown>;
 }) {
   return async function POST(request: Request) {
     const signature = request.headers.get('stripe-signature');
@@ -21,7 +22,8 @@ export function createStripeWebhookHandler(deps: {
     const uid = session.metadata?.firebaseUid;
     if (!uid) return Response.json({ error: '決済利用者を確認できません。' }, { status: 400 });
     try {
-      await deps.credit({ id: session.id, uid, amountTotal: session.amount_total, currency: session.currency, paymentStatus: session.payment_status });
+      const credits = deps.credits(session.metadata?.reviewPlan ?? '');
+      await deps.credit({ id: session.id, uid, credits, amountTotal: session.amount_total, currency: session.currency, paymentStatus: session.payment_status });
       return Response.json({ received: true });
     } catch { return Response.json({ error: '決済反映に失敗しました。' }, { status: 500 }); }
   };

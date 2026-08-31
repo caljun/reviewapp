@@ -36,6 +36,12 @@ const sample = `★1
 無料版の広告が多すぎます。もう少し減らしてほしい。`;
 
 type Review = { text: string; rating?: number };
+type ReviewPlanId = '50' | '150' | '500';
+const reviewPlans: { id: ReviewPlanId; reviews: number; price: string }[] = [
+  { id: '50', reviews: 50, price: '980円' },
+  { id: '150', reviews: 150, price: '1,980円' },
+  { id: '500', reviews: 500, price: '4,980円' },
+];
 const splitReviews = (value: string): Review[] => value.replace(/\r/g, '').trim().split(/\n\s*\n|\n-{3,}\n|(?=^★[1-5]\s*$)/gm).map((chunk) => chunk.trim()).filter(Boolean).map((chunk) => {
   const rating = chunk.match(/★\s*([1-5])/)?.[1];
   return { rating: rating ? Number(rating) : undefined, text: chunk.replace(/^★\s*[1-5]\s*/m, '').trim() };
@@ -115,11 +121,13 @@ export default function Home() {
       return () => window.clearTimeout(timer);
     }
   }, [pendingAnalysis, canAnalyze]);
-  const purchase = async () => {
+  const purchase = async (planId: ReviewPlanId) => {
     if (purchaseBusy || !session.user) return;
     setPurchaseBusy(true); setPaymentMessage('購入処理中です…');
     try {
-      const response = await authenticatedFetch(session.user, '/api/stripe/create-checkout-session', { method: 'POST' });
+      const response = await authenticatedFetch(session.user, '/api/stripe/create-checkout-session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ planId }),
+      });
       const data = await response.json().catch(() => null) as { url?: string; error?: string } | null;
       if (!response.ok || !data?.url) throw new Error(data?.error || 'Checkoutを作成できませんでした。');
       window.location.assign(data.url);
@@ -192,6 +200,6 @@ export default function Home() {
       </section><p className="privacy-note">分析時にレビューをGoogle Geminiへ送信します。本アプリでは保存しません。個人情報・機密情報は入力しないでください。</p>
     </div> : analysisText ? <div className="page-shell results-shell"><section className="panel compact-card"><div className="section-heading"><h2>レビュー分析（自由文）</h2><button className="secondary" onClick={() => setView('input')}>入力へ戻る</button></div><p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9, marginTop: 24 }}>{analysisText}</p></section></div> : result && <Results result={result} appName={appName} onReset={() => setView('input')} />}
     {showLogin && <LoginModal purpose={pendingPurchase ? 'purchase' : 'analysis'} busy={session.busy} error={session.error} onClose={() => { setShowLogin(false); if (!session.user) { setPendingAnalysis(false); setPendingPurchase(false); } }} onGoogle={session.login} onEmail={session.loginWithEmail} />}
-    {showPurchase && <div className="login-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !purchaseBusy) setShowPurchase(false); }}><section className="login-modal purchase-modal" role="dialog" aria-modal="true" aria-labelledby="purchase-title"><button className="modal-close" aria-label="閉じる" disabled={purchaseBusy} onClick={() => setShowPurchase(false)}>×</button><h2 id="purchase-title">レビュー枠を追加</h2><p>50レビュー分を追加します。</p><div className="purchase-summary"><span>追加レビュー数</span><strong>50件</strong><span>料金</span><strong>980円</strong></div><button className="primary purchase-confirm" disabled={purchaseBusy} onClick={() => { setShowPurchase(false); void purchaseRef.current(); }}>{purchaseBusy ? '購入処理中…' : 'Stripeで購入する'}</button><button className="link-button purchase-cancel" disabled={purchaseBusy} onClick={() => setShowPurchase(false)}>キャンセル</button></section></div>}
+    {showPurchase && <div className="login-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !purchaseBusy) setShowPurchase(false); }}><section className="login-modal purchase-modal" role="dialog" aria-modal="true" aria-labelledby="purchase-title"><button className="modal-close" aria-label="閉じる" disabled={purchaseBusy} onClick={() => setShowPurchase(false)}>×</button><h2 id="purchase-title">レビュー枠を追加</h2><p>追加するレビュー数を選んでください。</p><div className="purchase-plans">{reviewPlans.map(plan => <button key={plan.id} className="purchase-plan" disabled={purchaseBusy} onClick={() => { setShowPurchase(false); void purchaseRef.current(plan.id); }}><span><strong>{plan.reviews}レビュー</strong><small>使い切り</small></span><b>{plan.price}</b></button>)}</div><button className="link-button purchase-cancel" disabled={purchaseBusy} onClick={() => setShowPurchase(false)}>キャンセル</button></section></div>}
   </main>;
 }

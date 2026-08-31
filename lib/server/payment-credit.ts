@@ -2,7 +2,7 @@ import { ApiError } from './api-error';
 import type { UserRecord } from './quota';
 
 export type PaymentRecord = {
-  uid: string; credits: 50; amountTotal: number | null; currency: string | null;
+  uid: string; credits: number; amountTotal: number | null; currency: string | null;
   paymentStatus: string; createdAt: unknown;
 };
 
@@ -19,7 +19,7 @@ export interface PaymentStore {
 }
 
 export function createPaymentCredits(store: PaymentStore) {
-  return async (session: { id: string; uid: string; amountTotal: number | null; currency: string | null; paymentStatus: string }) =>
+  return async (session: { id: string; uid: string; credits: number; amountTotal: number | null; currency: string | null; paymentStatus: string }) =>
     store.transaction(async tx => {
       if (await tx.payment(session.id)) return { credited: false };
       const user = await tx.user(session.uid);
@@ -27,9 +27,10 @@ export function createPaymentCredits(store: PaymentStore) {
         throw new ApiError(500, 'USAGE_DATA_ERROR', '利用者情報を更新できませんでした。');
       }
       const now = store.now();
-      tx.writeUser(session.uid, { ...user, remainingReviews: user.remainingReviews + 50, updatedAt: now });
+      if (![50, 150, 500].includes(session.credits)) throw new ApiError(400, 'INVALID_PLAN', '購入プランが正しくありません。');
+      tx.writeUser(session.uid, { ...user, remainingReviews: user.remainingReviews + session.credits, updatedAt: now });
       tx.writePayment(session.id, {
-        uid: session.uid, credits: 50, amountTotal: session.amountTotal, currency: session.currency,
+        uid: session.uid, credits: session.credits, amountTotal: session.amountTotal, currency: session.currency,
         paymentStatus: session.paymentStatus, createdAt: now,
       });
       return { credited: true };

@@ -2,6 +2,7 @@ import { ApiError, errorResponse } from './api-error';
 
 type Identity = { uid: string };
 type Session = { url: string | null };
+type Plan = { id: string; credits: number; priceId: string };
 
 const ALLOWED_PRODUCTION_HOST = 'reviewapp-muta.vercel.app';
 
@@ -17,17 +18,22 @@ function safeOrigin(request: Request) {
 export function createCheckoutHandler(deps: {
   authenticate(request: Request): Promise<Identity>;
   create(input: {
-    uid: string; priceId: string; successUrl: string; cancelUrl: string;
+    uid: string; planId: string; credits: number; priceId: string; successUrl: string; cancelUrl: string;
   }): Promise<Session>;
-  priceId(): string;
+  plan(planId: string): Plan;
 }) {
   return async function POST(request: Request) {
     try {
       const identity = await deps.authenticate(request);
       const origin = safeOrigin(request);
+      const body = await request.json().catch(() => null) as { planId?: unknown } | null;
+      if (!body || typeof body.planId !== 'string') throw new ApiError(400, 'INVALID_PLAN', '購入プランを選択してください。');
+      const plan = deps.plan(body.planId);
       const session = await deps.create({
         uid: identity.uid,
-        priceId: deps.priceId(),
+        planId: plan.id,
+        credits: plan.credits,
+        priceId: plan.priceId,
         successUrl: `${origin}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${origin}/?payment=cancelled`,
       });

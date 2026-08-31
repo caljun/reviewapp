@@ -20,9 +20,12 @@
 .login-modal form { display: grid; gap: 14px; }
 .login-submit { width: 100%; justify-content: center; }
 .login-switch { display: block; margin: 16px auto 0; }
-.purchase-summary { display: grid; grid-template-columns: 1fr auto; gap: 12px; margin: 22px 0; padding: 18px; border-radius: 9px; background: var(--mint); }
-.purchase-summary span { color: var(--muted); font-size: 13px; }
-.purchase-summary strong { color: var(--ink); font-size: 15px; }
-.purchase-confirm { width: 100%; }
+.purchase-plans { display: grid; gap: 10px; margin: 22px 0; }
+.purchase-plan { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 15px 16px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); text-align: left; }
+.purchase-plan:hover { border-color: var(--teal); background: var(--mint); }
+.purchase-plan span { display: grid; gap: 4px; }
+.purchase-plan strong { font-size: 15px; }
+.purchase-plan small { color: var(--muted); font-size: 10px; }
+.purchase-plan b { color: var(--teal-dark); font-size: 16px; }
 .purchase-cancel { display: block; margin: 14px auto 0; }
 @media(max-width: 520px) { .login-modal { padding: 24px 20px; }.header-actions{gap:8px}.balance-button{gap:6px;padding:4px 9px}.balance-button span{display:none}.header-logout{display:none} }

@@ -1,5 +1,5 @@
 import { creditPayment } from '@/lib/server/firestore-payments';
-import { stripe } from '@/lib/server/stripe';
+import { reviewCredits, stripe } from '@/lib/server/stripe';
 import { createStripeWebhookHandler } from '@/lib/server/stripe-webhook';
 
 export const runtime = 'nodejs';
@@ -11,5 +11,6 @@ export const POST = createStripeWebhookHandler({
     return value;
   },
   construct: (body, signature, secret) => stripe().webhooks.constructEvent(body, signature, secret),
+  credits: reviewCredits,
   credit: creditPayment,
 });
