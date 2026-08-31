@@ -39,7 +39,7 @@ export default function PrivacyPage() {
 
       <section><h2>13. ポリシーの変更</h2><p>法令、サービス内容または情報の取り扱い方法の変更に応じ、本ポリシーを変更することがあります。重要な変更は、本サービス上での表示その他合理的な方法により周知します。</p></section>
 
-      <section><h2>14. 運営者およびお問い合わせ</h2>{/* 公開前に、以下の運営者名・所在地・問い合わせ先プレースホルダーを実情報へ差し替えてください。 */}<div className="legal-contact"><p>運営者：[運営者名]</p><p>所在地：[所在地]</p><p>問い合わせ先：[メールアドレス]</p></div></section>
+      <section><h2>14. 運営者およびお問い合わせ</h2><div className="legal-contact"><p>運営者：カルデロン純矢</p><p>問い合わせ先：calderonjunya0602@gmail.com</p></div></section>
     </article>
   </main>;
 }

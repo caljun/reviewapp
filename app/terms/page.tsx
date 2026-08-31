@@ -37,7 +37,7 @@ export default function TermsPage() {
 
       <section><h2>第12条（準拠法および管轄）</h2><p>本規約は日本法に準拠します。本サービスに関して紛争が生じた場合、運営者の所在地を管轄する日本の裁判所を、法令により認められる範囲で第一審の専属的合意管轄裁判所とします。</p></section>
 
-      <section><h2>第13条（運営者およびお問い合わせ）</h2>{/* 公開前に、以下の運営者名・所在地・問い合わせ先プレースホルダーを実情報へ差し替えてください。 */}<div className="legal-contact"><p>運営者：[運営者名]</p><p>所在地：[所在地]</p><p>問い合わせ先：[メールアドレス]</p></div></section>
+      <section><h2>第13条（運営者およびお問い合わせ）</h2><div className="legal-contact"><p>運営者：カルデロン純矢</p><p>問い合わせ先：calderonjunya0602@gmail.com</p></div></section>
     </article>
   </main>;
 }
