@@ -166,7 +166,7 @@ export default function Home() {
   return <main>
     <header className="site-header"><button className="brand" disabled={loading} onClick={() => setView('input')} aria-label="ReviewScope ホーム"><span className="brand-mark">R</span><span>ReviewScope</span></button></header>
     {view !== 'result' ? <div className="page-shell input-shell">
-      <section className="hero"><span className="eyebrow">AI REVIEW ANALYSIS</span><h1>大量のレビューから、<br /><em>次に直すべきこと</em>を見つける。</h1><p>レビューをまとめて貼り付けるだけ。よくある不満を分類・集計し、改善の優先順位を整理します。</p></section>
+      <section className="hero"><h1>アプリレビューをまとめて分析</h1><p>レビューを貼り付けて、改善点を確認できます。</p></section>
       <section className="panel input-panel">
         {session.user && <div className="quota-notice" aria-live="polite">
           {session.busy ? <p>利用枠を確認しています</p> : session.error ? <><p role="alert">{session.error}</p><button className="secondary" onClick={() => void session.refresh()}>利用枠を再確認</button></> : session.usage && <p>残り無料レビュー数：{session.usage.remainingReviews}</p>}
@@ -176,7 +176,7 @@ export default function Home() {
         {paymentMessage && <p className={paymentMessage.includes('できません') ? 'error-message' : 'payment-message'} role="status">{paymentMessage}</p>}
         <div className="steps" aria-label="進捗"><span className="active"><b>1</b>レビュー入力</span><i /><span className={view === 'preview' ? 'active' : ''}><b>2</b>内容を確認</span><i /><span><b>3</b>分析結果</span></div>
         <div hidden={view !== 'input'}>
-          <div className="field-row"><label className="field"><span>アプリ名 <small>任意</small></span><input maxLength={100} value={appName} onChange={(e) => setAppName(e.target.value)} placeholder="例：Habit Note" /></label><label className="field"><span>特に知りたいこと <small>任意</small></span><input maxLength={500} value={focus} onChange={(e) => setFocus(e.target.value)} /></label></div>
+          <div className="field-row"><label className="field"><span>アプリ名</span><input maxLength={100} value={appName} onChange={(e) => setAppName(e.target.value)} placeholder="例：Habit Note" /></label><label className="field"><span>特に知りたいこと</span><input maxLength={500} value={focus} onChange={(e) => setFocus(e.target.value)} /></label></div>
           <div className="tabs" aria-label="入力方法"><button type="button" aria-pressed={inputMode === 'text'} className={inputMode === 'text' ? 'selected' : ''} onClick={() => setInputMode('text')}>テキスト貼り付け</button><button type="button" aria-pressed={inputMode === 'csv'} className={inputMode === 'csv' ? 'selected' : ''} onClick={() => setInputMode('csv')}>CSVアップロード</button></div>
           <div hidden={inputMode !== 'text'}>
           <label className="field textarea-field"><span>レビューを貼り付け</span><textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="レビューを空行で区切って貼り付けてください" /><span className="counter">{text.length.toLocaleString()} 文字</span></label>
