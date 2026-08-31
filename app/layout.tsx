@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import './globals.css';
 import FirebaseInit from './firebase-init';
 
@@ -14,7 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body><FirebaseInit />{children}<footer className="privacy-note">アクセス解析にGoogle Analyticsを使用しています。レビュー本文を解析イベントとして送信する処理は行いません。</footer></body>
+      <body><FirebaseInit />{children}<footer className="site-footer"><p>アクセス解析にGoogle Analyticsを使用しています。レビュー本文を解析イベントとして送信する処理は行いません。</p><nav aria-label="法的情報"><Link href="/terms">利用規約</Link><Link href="/privacy">プライバシーポリシー</Link></nav></footer></body>
     </html>
   );
 }
