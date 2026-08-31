@@ -11,30 +11,6 @@ import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import { useAnalysisSession } from './use-analysis-session';
 import LoginModal from './login-modal';
 
-const sample = `★1
-アップデート後にアプリが起動しなくなりました。早く直してほしいです。
-
-★2
-広告が多すぎて操作しづらい。動画広告も長いです。
-
-★3
-便利ですが、通知設定がどこにあるか分かりにくいです。
-
-★1
-ログインしようとすると落ちて、アプリが起動できません。
-
-★5
-シンプルで見やすく、毎日使っています。
-
-★2
-アップデートしてから起動しません。大切なデータが見られず困っています。
-
-★4
-操作が簡単で使いやすいです。ダークモードにも対応してほしいです。
-
-★2
-無料版の広告が多すぎます。もう少し減らしてほしい。`;
-
 type Review = { text: string; rating?: number };
 type ReviewPlanId = '50' | '150' | '500';
 const reviewPlans: { id: ReviewPlanId; reviews: number; price: string }[] = [
@@ -49,11 +25,11 @@ const splitReviews = (value: string): Review[] => value.replace(/\r/g, '').trim(
 
 export default function Home() {
   const session = useAnalysisSession();
-  const [text, setText] = useState(sample);
+  const [text, setText] = useState('');
   const [inputMode, setInputMode] = useState<'text' | 'csv'>('text');
   const [csv, setCsv] = useState<CsvInputState>({ reviews: [], error: '', busy: false });
-  const [appName, setAppName] = useState('Habit Note');
-  const [focus, setFocus] = useState('次のアップデートで直すべき機能を知りたい');
+  const [appName, setAppName] = useState('');
+  const [focus, setFocus] = useState('');
   const [view, setView] = useState<'input' | 'preview' | 'result'>('input');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -181,10 +157,10 @@ export default function Home() {
         {paymentMessage && <p className={paymentMessage.includes('できません') ? 'error-message' : 'payment-message'} role="status">{paymentMessage}</p>}
         <div className="steps" aria-label="進捗"><span className="active"><b>1</b>レビュー入力</span><i /><span className={view === 'preview' ? 'active' : ''}><b>2</b>内容を確認</span><i /><span><b>3</b>分析結果</span></div>
         <div hidden={view !== 'input'}>
-          <div className="field-row"><label className="field"><span>アプリ名</span><input maxLength={100} value={appName} onChange={(e) => setAppName(e.target.value)} placeholder="例：Habit Note" /></label><label className="field"><span>特に知りたいこと</span><input maxLength={500} value={focus} onChange={(e) => setFocus(e.target.value)} /></label></div>
+          <div className="field-row"><label className="field"><span>アプリ名</span><input maxLength={100} value={appName} onChange={(e) => setAppName(e.target.value)} placeholder="例：Habit Note" /></label><label className="field"><span>特に知りたいこと</span><input maxLength={500} value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="例：次に改善すべき機能" /></label></div>
           <div className="tabs" aria-label="入力方法"><button type="button" aria-pressed={inputMode === 'text'} className={inputMode === 'text' ? 'selected' : ''} onClick={() => setInputMode('text')}>テキスト貼り付け</button><button type="button" aria-pressed={inputMode === 'csv'} className={inputMode === 'csv' ? 'selected' : ''} onClick={() => setInputMode('csv')}>CSVアップロード</button></div>
           <div hidden={inputMode !== 'text'}>
-          <label className="field textarea-field"><span>レビューを貼り付け</span><textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="レビューを空行で区切って貼り付けてください" /><span className="counter">{text.length.toLocaleString()} 文字</span></label>
+          <label className="field textarea-field"><span>レビューを貼り付け</span><textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={'例：\n★1\nアップデート後に起動しなくなりました。\n\n★4\nシンプルで使いやすいです。'} /><span className="counter">{text.length.toLocaleString()} 文字</span></label>
           </div>
           <div hidden={inputMode !== 'csv'}><CsvInput onChange={setCsv} /></div>
           <div className="detected" role="status"><div><span className="pulse" /><strong>{reviews.length}件</strong>のレビューを認識しました</div><span>星評価を認識：{rated}/{reviews.length}件</span></div>
@@ -196,7 +172,7 @@ export default function Home() {
         </div>
         {loading && <p role="status" className="privacy-note">レビューを分析しています。このままお待ちください。</p>}
         {error && <p role="alert" className="error-message">{error}</p>}
-        {!validInput && <p className="error-message">レビューは1〜50件、各2,000文字、合計50,000文字まで入力できます。</p>}
+        {reviews.length > 0 && !validInput && <p className="error-message">レビューは1〜50件、各2,000文字、合計50,000文字まで入力できます。</p>}
       </section><p className="privacy-note">分析時にレビューをGoogle Geminiへ送信します。本アプリでは保存しません。個人情報・機密情報は入力しないでください。</p>
     </div> : analysisText ? <div className="page-shell results-shell"><section className="panel compact-card"><div className="section-heading"><h2>レビュー分析（自由文）</h2><button className="secondary" onClick={() => setView('input')}>入力へ戻る</button></div><p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9, marginTop: 24 }}>{analysisText}</p></section></div> : result && <Results result={result} appName={appName} onReset={() => setView('input')} />}
     {showLogin && <LoginModal purpose={pendingPurchase ? 'purchase' : 'analysis'} busy={session.busy} error={session.error} onClose={() => { setShowLogin(false); if (!session.user) { setPendingAnalysis(false); setPendingPurchase(false); } }} onGoogle={session.login} onEmail={session.loginWithEmail} />}
