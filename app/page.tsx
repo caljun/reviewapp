@@ -54,6 +54,7 @@ export default function Home() {
   const [result, setResult] = useState<SimpleAnalysis | null>(null);
   const [analysisText, setAnalysisText] = useState('');
   const [showLogin, setShowLogin] = useState(false);
+  const [showPurchase, setShowPurchase] = useState(false);
   const [pendingAnalysis, setPendingAnalysis] = useState(false);
   const [pendingPurchase, setPendingPurchase] = useState(false);
   const [purchaseBusy, setPurchaseBusy] = useState(false);
@@ -133,7 +134,7 @@ export default function Home() {
     if (pendingPurchase && session.user && !session.busy && session.usage) {
       const timer = window.setTimeout(() => {
         setPendingPurchase(false);
-        void purchaseRef.current();
+        setShowPurchase(true);
       }, 0);
       return () => window.clearTimeout(timer);
     }
@@ -154,7 +155,7 @@ export default function Home() {
   const requestPurchase = () => {
     setPaymentMessage('');
     if (!session.user) { setPendingPurchase(true); setPendingAnalysis(false); setShowLogin(true); return; }
-    void purchase();
+    setShowPurchase(true);
   };
   const requestAnalysis = () => {
     setError('');
@@ -164,15 +165,11 @@ export default function Home() {
   };
 
   return <main>
-    <header className="site-header"><button className="brand" disabled={loading} onClick={() => setView('input')} aria-label="ReviewScope ホーム"><span className="brand-mark">R</span><span>ReviewScope</span></button></header>
+    <header className="site-header"><button className="brand" disabled={loading} onClick={() => setView('input')} aria-label="ReviewScope ホーム"><span className="brand-mark">R</span><span>ReviewScope</span></button><div className="header-actions">{session.user ? <><button className="balance-button" disabled={session.busy || purchaseBusy} onClick={requestPurchase}><span>残りレビュー</span><strong>{session.usage?.remainingReviews ?? '−'}件</strong></button><button className="header-logout" onClick={() => void session.logout()}>ログアウト</button></> : <button className="header-login" disabled={session.busy} onClick={() => setShowLogin(true)}>ログイン</button>}</div></header>
     {view !== 'result' ? <div className="page-shell input-shell">
       <section className="hero"><h1>アプリレビューをまとめて分析</h1><p>レビューを貼り付けて、改善点を確認できます。</p></section>
       <section className="panel input-panel">
-        {session.user && <div className="quota-notice" aria-live="polite">
-          {session.busy ? <p>利用枠を確認しています</p> : session.error ? <><p role="alert">{session.error}</p><button className="secondary" onClick={() => void session.refresh()}>利用枠を再確認</button></> : session.usage && <p>残り無料レビュー数：{session.usage.remainingReviews}</p>}
-          <button className="link-button" onClick={() => void session.logout()}>ログアウト</button>
-          <button className="secondary purchase-button" disabled={session.busy || purchaseBusy} onClick={requestPurchase}>{purchaseBusy ? '購入処理中…' : '50レビュー分を980円で追加'}</button>
-        </div>}
+        {session.user && session.error && <div className="quota-notice" aria-live="polite"><p role="alert">{session.error}</p><button className="secondary" onClick={() => void session.refresh()}>利用枠を再確認</button></div>}
         {paymentMessage && <p className={paymentMessage.includes('できません') ? 'error-message' : 'payment-message'} role="status">{paymentMessage}</p>}
         <div className="steps" aria-label="進捗"><span className="active"><b>1</b>レビュー入力</span><i /><span className={view === 'preview' ? 'active' : ''}><b>2</b>内容を確認</span><i /><span><b>3</b>分析結果</span></div>
         <div hidden={view !== 'input'}>
@@ -195,5 +192,6 @@ export default function Home() {
       </section><p className="privacy-note">分析時にレビューをGoogle Geminiへ送信します。本アプリでは保存しません。個人情報・機密情報は入力しないでください。</p>
     </div> : analysisText ? <div className="page-shell results-shell"><section className="panel compact-card"><div className="section-heading"><h2>レビュー分析（自由文）</h2><button className="secondary" onClick={() => setView('input')}>入力へ戻る</button></div><p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9, marginTop: 24 }}>{analysisText}</p></section></div> : result && <Results result={result} appName={appName} onReset={() => setView('input')} />}
     {showLogin && <LoginModal purpose={pendingPurchase ? 'purchase' : 'analysis'} busy={session.busy} error={session.error} onClose={() => { setShowLogin(false); if (!session.user) { setPendingAnalysis(false); setPendingPurchase(false); } }} onGoogle={session.login} onEmail={session.loginWithEmail} />}
+    {showPurchase && <div className="login-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !purchaseBusy) setShowPurchase(false); }}><section className="login-modal purchase-modal" role="dialog" aria-modal="true" aria-labelledby="purchase-title"><button className="modal-close" aria-label="閉じる" disabled={purchaseBusy} onClick={() => setShowPurchase(false)}>×</button><h2 id="purchase-title">レビュー枠を追加</h2><p>50レビュー分を追加します。</p><div className="purchase-summary"><span>追加レビュー数</span><strong>50件</strong><span>料金</span><strong>980円</strong></div><button className="primary purchase-confirm" disabled={purchaseBusy} onClick={() => { setShowPurchase(false); void purchaseRef.current(); }}>{purchaseBusy ? '購入処理中…' : 'Stripeで購入する'}</button><button className="link-button purchase-cancel" disabled={purchaseBusy} onClick={() => setShowPurchase(false)}>キャンセル</button></section></div>}
   </main>;
 }
