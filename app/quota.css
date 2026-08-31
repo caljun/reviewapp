@@ -1,6 +1,8 @@
 .quota-notice { padding: 12px 16px; margin-bottom: 24px; border-radius: 8px; background: var(--mint); color: var(--teal-dark); font-size: 13px; line-height: 1.7; }
 .quota-notice p { margin: 0; }
 .quota-notice button { margin-top: 10px; }
+.quota-notice .purchase-button { display: block; margin-top: 12px; }
+.payment-message { margin: 0 0 18px; padding: 12px 16px; border-radius: 8px; background: var(--mint); color: var(--teal-dark); font-size: 13px; }
 .login-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: rgba(8, 33, 36, .62); }
 .login-modal { position: relative; width: min(100%, 420px); padding: 30px; border-radius: 14px; background: #fff; box-shadow: 0 24px 70px rgba(0, 0, 0, .25); }
 .login-modal h2 { margin: 0 36px 8px 0; font-size: 24px; }

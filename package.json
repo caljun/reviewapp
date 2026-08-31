@@ -6,7 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "test": "tsx --test tests/analysis.test.ts tests/simple-analysis.test.ts tests/csv-export.test.ts tests/protected-analysis.test.ts",
+    "test": "tsx --test tests/analysis.test.ts tests/simple-analysis.test.ts tests/csv-export.test.ts tests/protected-analysis.test.ts tests/stripe.test.ts",
     "test:live": "node --env-file=.env.local --import tsx --test tests/live.test.ts",
     "dev": "next dev",
     "build": "next build",
@@ -22,6 +22,7 @@
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "server-only": "^0.0.1",
+    "stripe": "^22.6.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

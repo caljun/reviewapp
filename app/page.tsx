@@ -55,6 +55,9 @@ export default function Home() {
   const [analysisText, setAnalysisText] = useState('');
   const [showLogin, setShowLogin] = useState(false);
   const [pendingAnalysis, setPendingAnalysis] = useState(false);
+  const [pendingPurchase, setPendingPurchase] = useState(false);
+  const [purchaseBusy, setPurchaseBusy] = useState(false);
+  const [paymentMessage, setPaymentMessage] = useState('');
   const inFlight = useRef(false);
   const attempt = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const textReviews = useMemo(() => splitReviews(text), [text]);
@@ -111,6 +114,48 @@ export default function Home() {
       return () => window.clearTimeout(timer);
     }
   }, [pendingAnalysis, canAnalyze]);
+  const purchase = async () => {
+    if (purchaseBusy || !session.user) return;
+    setPurchaseBusy(true); setPaymentMessage('購入処理中です…');
+    try {
+      const response = await authenticatedFetch(session.user, '/api/stripe/create-checkout-session', { method: 'POST' });
+      const data = await response.json().catch(() => null) as { url?: string; error?: string } | null;
+      if (!response.ok || !data?.url) throw new Error(data?.error || 'Checkoutを作成できませんでした。');
+      window.location.assign(data.url);
+    } catch (value) {
+      setPaymentMessage(value instanceof Error ? value.message : 'Checkoutを作成できませんでした。');
+      setPurchaseBusy(false);
+    }
+  };
+  const purchaseRef = useRef(purchase);
+  useEffect(() => { purchaseRef.current = purchase; });
+  useEffect(() => {
+    if (pendingPurchase && session.user && !session.busy && session.usage) {
+      const timer = window.setTimeout(() => {
+        setPendingPurchase(false);
+        void purchaseRef.current();
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [pendingPurchase, session.user, session.busy, session.usage]);
+  const refreshUsage = session.refresh;
+  useEffect(() => {
+    const status = new URLSearchParams(window.location.search).get('payment');
+    if (status === 'cancelled') {
+      const timer = window.setTimeout(() => setPaymentMessage('購入をキャンセルしました。'), 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (status !== 'success') return;
+    const message = window.setTimeout(() => setPaymentMessage('購入が完了しました。残高を反映しています。'), 0);
+    const timers = [0, 800, 1800, 3500].map(delay => window.setTimeout(() => void refreshUsage(), delay));
+    const done = window.setTimeout(() => setPaymentMessage('購入が完了しました。'), 3800);
+    return () => { window.clearTimeout(message); timers.forEach(window.clearTimeout); window.clearTimeout(done); };
+  }, [refreshUsage]);
+  const requestPurchase = () => {
+    setPaymentMessage('');
+    if (!session.user) { setPendingPurchase(true); setPendingAnalysis(false); setShowLogin(true); return; }
+    void purchase();
+  };
   const requestAnalysis = () => {
     setError('');
     if (!session.user) { setPendingAnalysis(true); setShowLogin(true); return; }
@@ -126,7 +171,9 @@ export default function Home() {
         {session.user && <div className="quota-notice" aria-live="polite">
           {session.busy ? <p>利用枠を確認しています</p> : session.error ? <><p role="alert">{session.error}</p><button className="secondary" onClick={() => void session.refresh()}>利用枠を再確認</button></> : session.usage && <p>残り無料レビュー数：{session.usage.remainingReviews}</p>}
           <button className="link-button" onClick={() => void session.logout()}>ログアウト</button>
+          <button className="secondary purchase-button" disabled={session.busy || purchaseBusy} onClick={requestPurchase}>{purchaseBusy ? '購入処理中…' : '50レビュー分を980円で追加'}</button>
         </div>}
+        {paymentMessage && <p className={paymentMessage.includes('できません') ? 'error-message' : 'payment-message'} role="status">{paymentMessage}</p>}
         <div className="steps" aria-label="進捗"><span className="active"><b>1</b>レビュー入力</span><i /><span className={view === 'preview' ? 'active' : ''}><b>2</b>内容を確認</span><i /><span><b>3</b>分析結果</span></div>
         <div hidden={view !== 'input'}>
           <div className="field-row"><label className="field"><span>アプリ名 <small>任意</small></span><input maxLength={100} value={appName} onChange={(e) => setAppName(e.target.value)} placeholder="例：Habit Note" /></label><label className="field"><span>特に知りたいこと <small>任意</small></span><input maxLength={500} value={focus} onChange={(e) => setFocus(e.target.value)} /></label></div>
@@ -147,6 +194,6 @@ export default function Home() {
         {!validInput && <p className="error-message">レビューは1〜50件、各2,000文字、合計50,000文字まで入力できます。</p>}
       </section><p className="privacy-note">分析時にレビューをGoogle Geminiへ送信します。本アプリでは保存しません。個人情報・機密情報は入力しないでください。</p>
     </div> : analysisText ? <div className="page-shell results-shell"><section className="panel compact-card"><div className="section-heading"><h2>レビュー分析（自由文）</h2><button className="secondary" onClick={() => setView('input')}>入力へ戻る</button></div><p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9, marginTop: 24 }}>{analysisText}</p></section></div> : result && <Results result={result} appName={appName} onReset={() => setView('input')} />}
-    {showLogin && <LoginModal busy={session.busy} error={session.error} onClose={() => { setShowLogin(false); if (!session.user) setPendingAnalysis(false); }} onGoogle={session.login} onEmail={session.loginWithEmail} />}
+    {showLogin && <LoginModal purpose={pendingPurchase ? 'purchase' : 'analysis'} busy={session.busy} error={session.error} onClose={() => { setShowLogin(false); if (!session.user) { setPendingAnalysis(false); setPendingPurchase(false); } }} onGoogle={session.login} onEmail={session.loginWithEmail} />}
   </main>;
 }

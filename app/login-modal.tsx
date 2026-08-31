@@ -5,9 +5,10 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 type Props = {
   busy: boolean; error: string; onClose(): void;
   onGoogle(): Promise<void>; onEmail(email: string, password: string, create: boolean): Promise<void>;
+  purpose?: 'analysis' | 'purchase';
 };
 
-export default function LoginModal({ busy, error, onClose, onGoogle, onEmail }: Props) {
+export default function LoginModal({ busy, error, onClose, onGoogle, onEmail, purpose = 'analysis' }: Props) {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [create, setCreate] = useState(false);
   const title = useRef<HTMLHeadingElement>(null);
   useEffect(() => { title.current?.focus(); const close = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); }; window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close); }, [onClose]);
@@ -16,7 +17,7 @@ export default function LoginModal({ busy, error, onClose, onGoogle, onEmail }: 
   return <div className="login-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
       <button className="modal-close" aria-label="閉じる" onClick={onClose}>×</button>
-      <h2 id="login-title" ref={title} tabIndex={-1}>分析するにはログイン</h2>
+      <h2 id="login-title" ref={title} tabIndex={-1}>{purpose === 'purchase' ? '購入するにはログイン' : '分析するにはログイン'}</h2>
       <p>初回登録で10レビュー分を無料で分析できます。</p>
       <button className="google-login" disabled={busy} onClick={() => void google()}>Googleでログイン</button>
       <div className="login-divider"><span>または</span></div>
