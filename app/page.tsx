@@ -125,16 +125,24 @@ export default function Home() {
   }, [pendingPurchase, session.user, session.busy, session.usage]);
   const refreshUsage = session.refresh;
   useEffect(() => {
-    const status = new URLSearchParams(window.location.search).get('payment');
+    const url = new URL(window.location.href);
+    const status = url.searchParams.get('payment');
+    if (status === 'success' || status === 'cancelled') {
+      url.searchParams.delete('payment');
+      url.searchParams.delete('session_id');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    }
     if (status === 'cancelled') {
-      const timer = window.setTimeout(() => setPaymentMessage('購入をキャンセルしました。'), 0);
-      return () => window.clearTimeout(timer);
+      const message = window.setTimeout(() => setPaymentMessage('購入をキャンセルしました。'), 0);
+      const clear = window.setTimeout(() => setPaymentMessage(''), 4500);
+      return () => { window.clearTimeout(message); window.clearTimeout(clear); };
     }
     if (status !== 'success') return;
     const message = window.setTimeout(() => setPaymentMessage('購入が完了しました。残高を反映しています。'), 0);
     const timers = [0, 800, 1800, 3500].map(delay => window.setTimeout(() => void refreshUsage(), delay));
     const done = window.setTimeout(() => setPaymentMessage('購入が完了しました。'), 3800);
-    return () => { window.clearTimeout(message); timers.forEach(window.clearTimeout); window.clearTimeout(done); };
+    const clear = window.setTimeout(() => setPaymentMessage(''), 6500);
+    return () => { window.clearTimeout(message); timers.forEach(window.clearTimeout); window.clearTimeout(done); window.clearTimeout(clear); };
   }, [refreshUsage]);
   const requestPurchase = () => {
     setPaymentMessage('');
